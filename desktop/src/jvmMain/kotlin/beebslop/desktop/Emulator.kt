@@ -5,11 +5,14 @@ package beebslop.desktop
 
 import beebslop.bbc.BbcClock
 import beebslop.bbc.BbcMachine
+import beebslop.bbc.Disc
 import beebslop.bbc.KeyboardMatrix.Key
 import beebslop.bbc.KeyboardText
 import beebslop.bbc.Tape
 import beebslop.bbc.Typist
 import beebslop.bbc.Video
+import java.io.File
+import java.io.IOException
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
@@ -22,6 +25,9 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * without sound, the thread sleeps to match emulated time to wall time. With
  * [fastTape] on, it runs flat out while the cassette motor runs, so software
  * still sees the real timing and can't tell.
+ *
+ * A disc inserted from a file is saved back to it when the drive's head
+ * unloads after writing, when it is ejected, and when the emulator stops.
  */
 class Emulator(
     private val createMachine: () -> BbcMachine,
@@ -40,7 +46,16 @@ class Emulator(
 
         /** Called on the emulation thread when the cassette motor starts or stops. */
         fun motorChanged(on: Boolean) {}
+
+        /** Called on the emulation thread when the disc drives start or stop. */
+        fun discMotorChanged(on: Boolean) {}
+
+        /** Called when a changed disc couldn't be written back to [file]; it stays in, unsaved. */
+        fun discSaveFailed(drive: Int, file: File, error: IOException) {}
     }
+
+    /** A disc in a drive, and the file it is saved to, if any. */
+    private class Slot(val disc: Disc, var file: File?, var saved: Long)
 
     private val commands = ConcurrentLinkedQueue<(BbcMachine) -> Unit>()
     private val frameLock = Any()
@@ -52,6 +67,8 @@ class Emulator(
     private var leds: Pair<Boolean, Boolean>? = null
     private var motorRunning = false
     private var tape: Tape? = null
+    private val slots = arrayOfNulls<Slot>(2)
+    private var discMotor = false
 
     @Volatile private var running = false
     @Volatile var paused = false
@@ -74,6 +91,7 @@ class Emulator(
         running = false
         thread?.join(1000)
         thread = null
+        for (drive in slots.indices) saveDisc(drive)
     }
 
     /** Run [command] on the emulation thread before the next field. */
@@ -131,12 +149,68 @@ class Emulator(
     /** The cassette as a UEF image, delivered to [receive] on the emulation thread. */
     fun exportTape(receive: (ByteArray?) -> Unit) = post { receive(tape?.toUef()) }
 
-    /** Switch off and on: fresh RAM and chips, and a cold start. The cassette stays in. */
+    /** Whether the machine has a disc interface (a DFS ROM was found). */
+    val hasDiscs: Boolean get() = machine.fdc != null
+
+    /** Put [disc] in drive 0 or 1; if [file] is given, changes are saved to it. */
+    fun insertDisc(drive: Int, disc: Disc, file: File?) = post {
+        saveDisc(drive)
+        slots[drive] = Slot(disc, file, disc.changes)
+        it.fdc?.drives?.get(drive)?.disc = disc
+    }
+
+    fun ejectDisc(drive: Int) = post {
+        saveDisc(drive)
+        slots[drive] = null
+        it.fdc?.drives?.get(drive)?.disc = null
+    }
+
+    fun setWriteProtected(drive: Int, on: Boolean) = post { slots[drive]?.disc?.writeProtected = on }
+
+    /**
+     * Write the disc in [drive] to [file], and save later changes there too.
+     * [done] gets null, or the error, on the emulation thread.
+     */
+    fun saveDiscAs(drive: Int, file: File, done: (IOException?) -> Unit) = post {
+        val slot = slots[drive]
+        if (slot == null) {
+            done(IOException("There is no disc in drive $drive."))
+            return@post
+        }
+        try {
+            DiscFile.save(slot.disc, file)
+            slot.file = file
+            slot.saved = slot.disc.changes
+            done(null)
+        } catch (e: IOException) {
+            done(e)
+        }
+    }
+
+    /** Switch off and on: fresh RAM and chips, and a cold start. Cassette and discs stay in. */
     fun powerCycle() = post {
         typist.cancel(it)
         natural.reset()
-        machine = createMachine().also { fresh -> fresh.serialUla.tape = tape }
+        machine = createMachine().also { fresh ->
+            fresh.serialUla.tape = tape
+            for (drive in slots.indices) fresh.fdc?.drives?.get(drive)?.disc = slots[drive]?.disc
+        }
         paused = false
+    }
+
+    /** Writes a changed disc back to its file. */
+    private fun saveDisc(drive: Int) {
+        val slot = slots[drive] ?: return
+        val file = slot.file ?: return
+        if (slot.disc.changes == slot.saved) return
+        slot.saved = slot.disc.changes
+        try {
+            DiscFile.save(slot.disc, file)
+        } catch (e: IOException) {
+            // Don't keep failing: the disc stays in, and Save Disc As can still save it.
+            slot.file = null
+            listener.discSaveFailed(drive, file, e)
+        }
     }
 
     fun copyFrame(destination: IntArray) {
@@ -217,6 +291,13 @@ class Emulator(
         if (motor != motorRunning) {
             motorRunning = motor
             listener.motorChanged(motor)
+        }
+        val discs = machine.fdc?.headLoaded == true
+        if (discs != discMotor) {
+            discMotor = discs
+            listener.discMotorChanged(discs)
+            // The head unloads a couple of seconds after the last access: a good time to save.
+            if (!discs) for (drive in slots.indices) saveDisc(drive)
         }
         val lit = machine.latch.capsLockLed to machine.latch.shiftLockLed
         if (lit != leds) {

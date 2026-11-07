@@ -19,13 +19,19 @@ import beebslop.cpu.Cpu6502
  * - IRQ is the OR of both VIAs and the ACIA.
  * - The ACIA and serial ULA run the cassette; RS423 has nothing connected.
  *
- * The disc and Econet controllers, ADC and Tube are not yet emulated, and read
- * as absent.
+ * - With a disc filing system ROM, the Acorn disc interface is fitted: its
+ *   8271 controller, and the ROM in socket 14. The 8271's INT is the 6502's NMI.
+ *
+ * The Econet controller, ADC and Tube are not yet emulated, and read as absent.
  */
-class BbcMachine(osRom: ByteArray, basicRom: ByteArray) {
+class BbcMachine(osRom: ByteArray, basicRom: ByteArray, dfsRom: ByteArray? = null) {
     val ram = ByteArray(0x8000)
     val clock = BbcClock()
-    val roms = PagedRoms().apply { install(15, basicRom) }
+    val roms = PagedRoms().apply {
+        install(15, basicRom)
+        // DFS 0.90 is an 8 KiB ROM, which appears twice in its socket.
+        if (dfsRom != null) install(14, if (dfsRom.size == PagedRoms.ROM_SIZE / 2) dfsRom + dfsRom else dfsRom)
+    }
     val bus = BbcMemoryBus(ram, osRom, roms, clock)
     val cpu = Cpu6502(bus)
 
@@ -36,6 +42,10 @@ class BbcMachine(osRom: ByteArray, basicRom: ByteArray) {
     val videoUla = VideoUla()
     val acia = Acia6850()
     val serialUla = SerialUla(acia)
+
+    /** The disc controller; present only with a disc filing system ROM. */
+    val fdc: Fdc8271? = if (dfsRom != null) Fdc8271() else null
+    private var nmiLine = false
 
     /** The slow data bus between system VIA port A, the keyboard and the sound chip. */
     private var slowDataBus = 0xFF
@@ -70,6 +80,7 @@ class BbcMachine(osRom: ByteArray, basicRom: ByteArray) {
         bus.attach(SheilaRegion.VIDEO_ULA, videoUla)
         bus.attach(SheilaRegion.SYSTEM_VIA, systemVia)
         bus.attach(SheilaRegion.USER_VIA, userVia)
+        bus.attach(SheilaRegion.FDC, fdc)
         crtc.output = video
         clock.onTick = ::tick
         systemVia.reset()
@@ -83,6 +94,8 @@ class BbcMachine(osRom: ByteArray, basicRom: ByteArray) {
      */
     fun reset() {
         userVia.reset()
+        // The disc interface's reset line follows the board's.
+        fdc?.reset()
         cpu.reset()
     }
 
@@ -90,6 +103,10 @@ class BbcMachine(osRom: ByteArray, basicRom: ByteArray) {
     fun step(): Int {
         val before = clock.ticks
         cpu.irqAsserted = systemVia.irq || userVia.irq || acia.irq
+        // NMI is edge-triggered: one request per rising edge of the line.
+        val nmi = fdc?.interrupt == true
+        if (nmi && !nmiLine) cpu.requestNmi()
+        nmiLine = nmi
         cpu.step()
         return (clock.ticks - before).toInt()
     }
@@ -121,6 +138,7 @@ class BbcMachine(osRom: ByteArray, basicRom: ByteArray) {
     private fun tick(ticks: Long) {
         sound.tick()
         serialUla.tick()
+        fdc?.tick()
         val oneMhzEdge = ticks and 1L == 0L
         if (oneMhzEdge) {
             systemVia.tick()
