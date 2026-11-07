@@ -39,8 +39,10 @@ interface CrtcOutput {
  *   lines, where 0 means 16.
  * - The cursor is shown at address R14/R15 on rasters R10 bits 0-4 to R11. R10
  *   bits 5-6 choose steady, off, or blinking every 16 or 32 fields.
- * - R8 bits 4-5 set to 3 turn the display off. Other display and cursor skew
- *   settings are not yet emulated.
+ * - R8 bits 4-5 delay display enable by 0-2 characters, and bits 6-7 the
+ *   cursor; 3 turns that output off (HD6845S datasheet). MOS uses no skew in
+ *   modes 0-6. In MODE 7 it sets a display skew of 1 and a cursor skew of 2, to
+ *   match the teletext path's delays (see [Video]).
  * - R12-R17 can be read back; the other registers read 0.
  */
 class Crtc6845 : IoDevice {
@@ -58,6 +60,10 @@ class Crtc6845 : IoDevice {
     private var verticalDisplay = true
     private var cursorBlinkCount = 0
     private var cursorBlinkOn = true
+
+    /** Display enable and cursor of recent characters, newest in bit 0, for skew. */
+    private var displayHistory = 0
+    private var cursorHistory = 0
 
     var vsync: Boolean = false
         private set
@@ -98,9 +104,10 @@ class Crtc6845 : IoDevice {
     fun tick() {
         output?.let { out ->
             if (character == registers[2]) out.horizontalSync()
-            val displayEnabled = character < registers[1] && verticalDisplay && !inAdjust &&
-                registers[8] and 0x30 != 0x30
-            out.character(memoryAddress, raster, displayEnabled, displayEnabled && cursorHere())
+            val displayEnabled = character < registers[1] && verticalDisplay && !inAdjust
+            displayHistory = ((displayHistory shl 1) or (if (displayEnabled) 1 else 0)) and 0x07
+            cursorHistory = ((cursorHistory shl 1) or (if (displayEnabled && cursorHere()) 1 else 0)) and 0x07
+            out.character(memoryAddress, raster, skewed(displayHistory, 4), skewed(cursorHistory, 6))
         }
         if (character == registers[0]) {
             character = 0
@@ -108,6 +115,12 @@ class Crtc6845 : IoDevice {
         } else {
             character = (character + 1) and 0xFF
         }
+    }
+
+    /** The output delayed by the skew in R8 at [shift]; a skew of 3 keeps it off. */
+    private fun skewed(history: Int, shift: Int): Boolean {
+        val skew = (registers[8] shr shift) and 0x03
+        return skew != 3 && (history shr skew) and 1 != 0
     }
 
     private fun cursorHere(): Boolean {

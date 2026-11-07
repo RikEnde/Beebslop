@@ -86,7 +86,7 @@ marked `CC0-1.0 AND LicenseRef-CDPA-s55`; see
 
 ```sh
 ./run.sh                           # open the emulator window
-./run.sh --scale 2                 # a 1536 x 1152 window
+./run.sh --scale 2                 # a 1408 x 1056 window
 ./run.sh --screenshot boot.png     # no window: boot, save a PNG, exit
 ./run.sh --help
 ```
@@ -98,7 +98,7 @@ ROMs are read from `roms/`, or from `--roms DIR`.
 | Option | Meaning |
 |---|---|
 | `--roms DIR` | Directory with `os.rom` and `basic.rom` (default: `roms`) |
-| `--scale 1\|2` | Window size; 1 is 768 x 576 (default: 1) |
+| `--scale 1\|2` | Window size; 1 is 704 x 528 (default: 1) |
 | `--screenshot FILE` | Run without a window, save a PNG of the picture, then exit |
 | `--frames N` | 50ths of a second to run before the screenshot (default: 150) |
 | `--log-keys` | Print each host key event and the BBC key it maps to |
@@ -407,7 +407,10 @@ the middle of a frame appear where they happen. The rendering follows MAME's
   and 22 lines after vertical sync. In every mode the MOS's settings put the
   display 32 lines after vertical sync and 13-15 µs after horizontal sync, so
   all modes land in about the same place. Interlaced fields are woven together;
-  a non-interlaced picture has each line drawn twice.
+  a non-interlaced picture has each line drawn twice. The desktop shows a
+  704 by 528 part of it: the 640 by 512 display of modes 0-6 at (80, 20) with a
+  border of 32 pixels at the sides and 8 at the top and bottom. MODE 7's
+  display is 3 pixels narrower and lands at (83, 22).
 - **Modes 0-6.** Each byte is shifted out at the video ULA's pixel rate (2, 4, 8
   or 16 MHz). The logical colour is bits 7, 5, 3 and 1, and 1s are shifted in, so
   the same logic serves 2, 4 and 16 colours. The palette maps it to a physical
@@ -418,12 +421,16 @@ the middle of a frame appear where they happen. The rendering follows MAME's
   coloured text and graphics, contiguous and separated graphics, hold graphics,
   double height, flash, conceal, and new and black backgrounds. Each displayed
   line starts fresh with white text on black. The field (the 6845's RA0) chooses
-  which half of each rounded dot row is drawn.
+  which half of each rounded dot row is drawn. The board's latch holds each byte
+  for one character, and the SAA5050 outputs each character one character after
+  taking it in. So the picture comes 2 µs after the 6845's timing, which lines
+  MODE 7 up with the other modes. MOS sets the 6845's skew to match: display
+  enable 1 character (the latch), cursor 2 (the whole path).
 - **Cursor.** The 6845's cursor inverts the colours of 1, 2 or 4 characters, as
-  the video ULA's control register sets.
-- **Not yet emulated:** the 6845's display and cursor skew, so MODE 7 text sits
-  where the 6845 puts it, not delayed as the SAA5050 does; the extra half line
-  of an interlaced field; teletext boxing, which the BBC doesn't use.
+  the video ULA's control register sets, from where the skewed cursor signal
+  arrives.
+- **Not yet emulated:** the extra half line of an interlaced field; teletext
+  boxing, which the BBC doesn't use.
 
 ### Verification
 
@@ -476,6 +483,7 @@ pixels, and write PNGs to `bbc/build/test-frames/`:
 
 - the boot screen, white text on black, with row 0 blank;
 - MODE 7 graphics colour bars in all seven colours, and double-height text;
+- the MODE 7 cursor on the cell after the prompt, one character wide;
 - MODE 2 bars in its eight colours;
 - MODE 0 text, and MODE 6's 8 lit and 2 blank lines per row.
 
