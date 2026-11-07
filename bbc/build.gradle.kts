@@ -19,12 +19,14 @@ kotlin {
     }
 }
 
-// ROMs and tapes remain local inputs, never resources packaged into the library.
+// ROMs, tapes and discs remain local inputs, never resources packaged into the library.
 tasks.withType<Test>().configureEach {
     systemProperty("beebslop.romDirectory", rootProject.file("roms").absolutePath)
     systemProperty("beebslop.tapeDirectory", rootProject.file("tapes").absolutePath)
-    inputs.files(rootProject.file("roms/os.rom"), rootProject.file("roms/basic.rom"))
+    systemProperty("beebslop.discDirectory", rootProject.file("discs").absolutePath)
+    inputs.files(rootProject.file("roms/os.rom"), rootProject.file("roms/basic.rom"), rootProject.file("roms/dnfs.rom"))
         .withPropertyName("bbcRoms")
     inputs.dir(rootProject.file("tapes")).withPropertyName("tapes")
+    inputs.dir(rootProject.file("discs")).withPropertyName("discs")
     testLogging { events("passed", "skipped", "failed") }
 }

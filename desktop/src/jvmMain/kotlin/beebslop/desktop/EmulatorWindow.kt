@@ -3,6 +3,7 @@
 
 package beebslop.desktop
 
+import beebslop.bbc.Disc
 import beebslop.bbc.KeyboardMatrix.Key
 import beebslop.bbc.KeyboardText
 import beebslop.bbc.Tape
@@ -46,6 +47,9 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
     @Volatile private var shiftLock = false
     @Volatile private var motorRunning = false
     private var tapeName: String? = null
+    private val discNames = arrayOfNulls<String>(2)
+    private val writeProtectItems = Array(2) { JCheckBoxMenuItem("Write Protect") }
+    @Volatile private var discMotor = false
 
     fun show() {
         frame.defaultCloseOperation = WindowConstants.DISPOSE_ON_CLOSE
@@ -70,6 +74,8 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
         frame.isVisible = true
         screen.requestFocusInWindow()
         options.tape?.let { insertTape(it) }
+        for ((drive, file) in options.discs.withIndex()) if (file != null) insertDisc(drive, file)
+        if (options.boot) emulator.pressBreakWith(Key.SHIFT)
         options.typeText?.let { emulator.type(it, delayFrames = BOOT_FRAMES) }
         emulator.start()
     }
@@ -93,6 +99,23 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
     override fun motorChanged(on: Boolean) {
         motorRunning = on
         SwingUtilities.invokeLater { updateTitle() }
+    }
+
+    override fun discMotorChanged(on: Boolean) {
+        discMotor = on
+        SwingUtilities.invokeLater { updateTitle() }
+    }
+
+    override fun discSaveFailed(drive: Int, file: File, error: IOException) {
+        SwingUtilities.invokeLater {
+            JOptionPane.showMessageDialog(
+                frame,
+                "Couldn't save drive $drive's disc to ${file.name}:\n${error.message ?: error}\n\n" +
+                    "Changes are no longer saved automatically. Use Disc > Drive $drive > Save Disc As to keep them.",
+                "Beebslop",
+                JOptionPane.ERROR_MESSAGE,
+            )
+        }
     }
 
     override fun ledsChanged(capsLock: Boolean, shiftLock: Boolean) {
@@ -243,6 +266,13 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
                 }
             })
         })
+        add(JMenu("Disc").apply {
+            if (!emulator.hasDiscs) {
+                isEnabled = false
+                toolTipText = "No disc interface: put dnfs.rom in the ROM directory"
+            }
+            for (drive in 0..1) add(createDriveMenu(drive))
+        })
         add(JMenu("View").apply {
             val group = ButtonGroup()
             for (scale in 1..2) {
@@ -258,6 +288,27 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
         })
         add(JMenu("Help").apply {
             add(item("Keyboard", null) { showKeyboardHelp() })
+        })
+    }
+
+    /** One drive. Its second side, on a double-sided disc, is drive [drive] + 2 to DFS. */
+    private fun createDriveMenu(drive: Int) = JMenu("Drive $drive").apply {
+        add(item("Insert Disc...", if (drive == 0) shortcut(KeyEvent.VK_D) else null) { chooseDisc(drive) })
+        add(JMenu("New Blank Disc").apply {
+            add(item("Single-Sided (.ssd)", null) { insertBlank(drive, 1) })
+            add(item("Double-Sided (.dsd)", null) { insertBlank(drive, 2) })
+        })
+        add(item("Save Disc As...", null) { saveDisc(drive) })
+        addSeparator()
+        add(writeProtectItems[drive].apply {
+            toolTipText = "Writes fail with \"Disk read only\", like a disc with its notch covered"
+            addActionListener { emulator.setWriteProtected(drive, isSelected) }
+        })
+        add(item("Eject", null) {
+            emulator.ejectDisc(drive)
+            discNames[drive] = null
+            writeProtectItems[drive].isSelected = false
+            updateTitle()
         })
     }
 
@@ -330,6 +381,8 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
             (tapeName?.let { "  [$it]" } ?: "") +
             (if (emulator.fastTape) "  [FAST]" else "") +
             (if (motorRunning) "  [MOTOR]" else "") +
+            discNames.withIndex().joinToString("") { (drive, name) -> name?.let { "  [$drive: $it]" } ?: "" } +
+            (if (discMotor) "  [DISC]" else "") +
             (if (emulator.paused) "  (paused)" else "")
     }
 
@@ -350,6 +403,59 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
         } catch (e: IOException) {
             JOptionPane.showMessageDialog(frame, "Couldn't load ${file.name}:\n${e.message ?: e}", "Insert Tape", JOptionPane.ERROR_MESSAGE)
         }
+    }
+
+    private fun chooseDisc(drive: Int) {
+        val dialog = FileDialog(frame, "Insert Disc in Drive $drive", FileDialog.LOAD)
+        dialog.directory = File("discs").absolutePath
+        dialog.isVisible = true
+        val name = dialog.file
+        if (name != null) insertDisc(drive, File(dialog.directory, name))
+        screen.requestFocusInWindow()
+    }
+
+    private fun insertDisc(drive: Int, file: File) {
+        try {
+            val disc = DiscFile.load(file)
+            emulator.insertDisc(drive, disc, file)
+            discNames[drive] = file.name
+            writeProtectItems[drive].isSelected = disc.writeProtected
+            updateTitle()
+        } catch (e: IOException) {
+            JOptionPane.showMessageDialog(frame, "Couldn't load ${file.name}:\n${e.message ?: e}", "Insert Disc", JOptionPane.ERROR_MESSAGE)
+        }
+    }
+
+    private fun insertBlank(drive: Int, sides: Int) {
+        emulator.insertDisc(drive, Disc.blank(sides), null)
+        discNames[drive] = if (sides == 2) "blank .dsd" else "blank .ssd"
+        writeProtectItems[drive].isSelected = false
+        updateTitle()
+    }
+
+    /** Writes the disc to a file, which then keeps receiving its changes. */
+    private fun saveDisc(drive: Int) {
+        val dialog = FileDialog(frame, "Save Drive $drive's Disc As", FileDialog.SAVE)
+        dialog.directory = File("discs").absolutePath
+        dialog.file = discNames[drive]?.takeIf { it.endsWith(".ssd") || it.endsWith(".dsd") } ?: "disc.ssd"
+        dialog.isVisible = true
+        val name = dialog.file
+        if (name == null) {
+            screen.requestFocusInWindow()
+            return
+        }
+        val chosen = File(dialog.directory, name)
+        emulator.saveDiscAs(drive, chosen) { error ->
+            SwingUtilities.invokeLater {
+                if (error != null) {
+                    JOptionPane.showMessageDialog(frame, "Couldn't save ${chosen.name}:\n${error.message ?: error}", "Save Disc", JOptionPane.ERROR_MESSAGE)
+                } else {
+                    discNames[drive] = chosen.name
+                    updateTitle()
+                }
+            }
+        }
+        screen.requestFocusInWindow()
     }
 
     /** Writes the cassette, with anything recorded on it, to a UEF file. */
@@ -429,6 +535,10 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
             Tapes: insert one from the Tape menu, then type CHAIN "" and RETURN.
             To save, use Tape > New Blank Tape, SAVE "NAME", then Tape > Save Tape As.
             Tape > Fast Loading skips the wait; [MOTOR] shows the motor is running.
+
+            Discs: insert one from the Disc menu, then SHIFT+BREAK to boot it, or *CAT.
+            Changes are saved back to the image file; [DISC] shows the drives are running.
+            A double-sided disc's second side is drive 2 (or 3) to DFS.
             """.trimIndent(),
             "Keyboard",
             JOptionPane.PLAIN_MESSAGE,

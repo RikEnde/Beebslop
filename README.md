@@ -63,9 +63,9 @@ Each step ends with a headless test on the real ROMs.
 ### Teletext font
 
 The SAA5050's character shapes come from Ben Harris's
-[Bedstead](https://bjh21.me.uk/bedstead/). `tools/teletext_font.py` reads
-`bedstead.c` from Bedstead 3.261, checks its SHA-256, and writes
-`TeletextFont.kt`: the 5×9 bitmaps for codes `&20-&7F` of the English
+[Bedstead](https://bjh21.me.uk/bedstead/). `TeletextFont.kt` was generated
+from `bedstead.c` in Bedstead 3.261, whose SHA-256 is in its header. It holds
+the 5×9 bitmaps for codes `&20-&7F` of the English
 SAA5050. Character rounding is done in `Saa5050.kt`.
 
 Bedstead has no table of the English character set, so the script builds it:
