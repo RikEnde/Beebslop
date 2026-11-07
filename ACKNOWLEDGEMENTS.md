@@ -41,7 +41,9 @@ the ROM credits Sophie Wilson under her former name.
   - the 6845 CRTC (`mc6845.cpp`), by Wilbert Pol and Nigel Barnes;
   - the 6850 ACIA (`6850acia.cpp`), by smf;
   - the SAA5050 teletext generator (`saa5050.cpp`), by Curt Coder and Nigel
-    Barnes: our MODE 7 attributes, character rounding and mosaic graphics.
+    Barnes: our MODE 7 attributes, character rounding and mosaic graphics;
+  - the SN76489 family (`sn76496.cpp`), by Nicola Salmoria: our tone and noise
+    generators, noise taps and volume steps.
 
   Its ROM hashes for `os12.rom` and `basic2.rom` confirmed our images.
 - **[b2](https://github.com/tom-seddon/b2)**, by Tom Seddon: the source of our

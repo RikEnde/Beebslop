@@ -16,11 +16,13 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * second) at a time.
  *
  * Only the emulation thread touches the machine. Other threads talk to it
- * through [post] and read the picture through [copyFrame]. The thread sleeps to
- * match emulated time to wall time.
+ * through [post] and read the picture through [copyFrame]. With sound on, the
+ * blocking audio device sets the pace (its sample clock is the master clock);
+ * without sound, the thread sleeps to match emulated time to wall time.
  */
 class Emulator(
     private val createMachine: () -> BbcMachine,
+    private val soundEnabled: Boolean,
     private val listener: Listener,
 ) {
     interface Listener {
@@ -45,6 +47,7 @@ class Emulator(
 
     @Volatile private var running = false
     @Volatile var paused = false
+    @Volatile var volume = 1f
     @Volatile var frameCount = 0L
         private set
 
@@ -116,10 +119,25 @@ class Emulator(
     }
 
     private fun run() {
+        val audio = if (soundEnabled) AudioOutput.open(SAMPLE_RATE, SAMPLE_RATE / 15) else null
+        try {
+            runWith(audio)
+        } finally {
+            audio?.close()
+        }
+    }
+
+    private fun runWith(audio: AudioOutput?) {
+        val samples = FloatArray(SAMPLE_RATE / 5)
+        var soundMachine: BbcMachine? = null
         var paceStart = System.nanoTime()
         var paceTicks = 0L
         while (running) {
             while (true) commands.poll()?.invoke(machine) ?: break
+            if (audio != null && machine !== soundMachine) {
+                machine.sound.startSampling(SAMPLE_RATE, samples.size)
+                soundMachine = machine
+            }
             if (paused) {
                 Thread.sleep(10)
                 paceStart = System.nanoTime()
@@ -131,6 +149,10 @@ class Emulator(
             } catch (e: Exception) {
                 paused = true
                 listener.stopped(e)
+                continue
+            }
+            if (audio != null) {
+                audio.write(samples, soundMachine!!.sound.drainSamples(samples), volume)
                 continue
             }
             paceTicks += elapsed
@@ -168,6 +190,7 @@ class Emulator(
     }
 
     companion object {
+        const val SAMPLE_RATE = 48_000
         private const val MODIFIER_BREAK_FRAMES = 25
         private const val NANOS_PER_TICK = 1_000_000_000L / BbcClock.TICKS_PER_SECOND
         private const val MIN_FRAME_TICKS = 35_000L // 17.5 ms

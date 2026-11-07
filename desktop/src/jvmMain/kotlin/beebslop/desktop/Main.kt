@@ -19,6 +19,7 @@ const val USAGE = """Usage: beebslop [options]
   --scale 1|2         Window size; 1 is 704 x 528 (default: 1)
   --screenshot FILE   Run without a window, save a PNG of the picture, then exit
   --frames N          50ths of a second to run before the screenshot (default: 150)
+  --no-sound          Run without sound
   --log-keys          Print each host key event and the BBC key it maps to"""
 
 data class Options(
@@ -27,6 +28,7 @@ data class Options(
     val screenshot: File? = null,
     val screenshotFrames: Int = 150,
     val logKeys: Boolean = false,
+    val sound: Boolean = true,
 ) {
     companion object {
         fun parse(args: Array<String>): Options {
@@ -42,6 +44,7 @@ data class Options(
                     "--frames" -> options.copy(screenshotFrames = value().toIntOrNull()?.takeIf { it > 0 }
                         ?: throw IllegalArgumentException("--frames must be a positive number"))
                     "--log-keys" -> options.copy(logKeys = true)
+                    "--no-sound" -> options.copy(sound = false)
                     "--help", "-h" -> {
                         println(USAGE)
                         exitProcess(0)
