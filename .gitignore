@@ -1,0 +1,19 @@
+.gradle/
+.kotlin/
+.tools/
+.claude/
+**/build/
+.idea/
+*.iml
+.DS_Store
+# Track only the ROMs the emulator needs; other images (backups,
+# alternative dumps) stay local.
+roms/*
+!roms/os.rom
+!roms/basic.rom
+
+# Third-party ROM source reconstructions: no licence, so kept locally for
+# reference and never published. Only our README about them is tracked.
+docs/rom-sources/*
+!docs/rom-sources/README.md
+!docs/rom-sources/fetch.sh

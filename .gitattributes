@@ -1,0 +1,4 @@
+# Line endings: Unix scripts LF, Windows batch files CRLF, jars untouched.
+gradlew  text eol=lf
+*.bat    text eol=crlf
+*.jar    binary

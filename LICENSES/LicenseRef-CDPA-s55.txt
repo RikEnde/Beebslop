@@ -1,0 +1,27 @@
+SAA5050 character shapes (bbc/src/commonMain/kotlin/beebslop/bbc/TeletextFont.kt)
+
+The teletext character shapes in TeletextFont.kt are those of the Mullard
+SAA5050 character generator, as recorded in Ben Harris's Bedstead font
+(https://bjh21.me.uk/bedstead/, version 3.261). Bedstead's authors dedicated
+their own work to the public domain under CC0 1.0 (see CC0-1.0.txt).
+
+The SAA5050 shapes themselves were designed by Mullard. Bedstead's source says:
+
+  "Copyright in the typeface will still be owned by Mullard's corporate
+  successors, but under section 55 of the Copyright Designs and Patents Act
+  1988 that copyright is no longer infringed by the production or use of
+  articles specifically designed or adapted for producing material in that
+  typeface."
+
+Section 55 of the UK Copyright, Designs and Patents Act 1988 applies 25 years
+after the end of the year in which articles embodying a typeface were first
+marketed. The SAA5050 was on sale by 1982. See
+https://www.legislation.gov.uk/ukpga/1988/48/section/55.
+
+This is the Bedstead authors' reading, not legal advice. Debian takes a
+narrower view and distributes Bedstead in its non-free archive, because uses
+other than making and using typefaces might still infringe copyright in the
+original designs.
+
+No licence for the SAA5050 shapes has been granted to the Beebslop project. If
+you hold rights in them and want them removed, please get in touch.
