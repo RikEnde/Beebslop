@@ -16,6 +16,12 @@ kotlin {
     }
 }
 
+// The tests draw images but open no windows; headless AWT needs no display.
+tasks.withType<Test>().configureEach {
+    systemProperty("java.awt.headless", "true")
+    systemProperty("beebslop.romDirectory", rootProject.file("roms").absolutePath)
+}
+
 val mainCompilation = kotlin.jvm().compilations.getByName("main")
 val mainClassName = "beebslop.desktop.MainKt"
 
