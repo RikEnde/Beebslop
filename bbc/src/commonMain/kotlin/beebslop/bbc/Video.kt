@@ -19,9 +19,13 @@ package beebslop.bbc
  *   logical colour formed from bits 7, 5, 3 and 1 and 1s shifted in. Raster
  *   lines 8-15 of a character row are blank, giving the gaps in modes 3 and 6.
  * - MODE 7: the byte goes to the [Saa5050], whose 12 dots per 1 µs character
- *   are stretched to 16 pixels. Teletext addressing uses MA13.
+ *   are stretched to 16 pixels. Teletext addressing uses MA13. The byte passes
+ *   through a latch on the board, which holds it for one character, and the
+ *   SAA5050 outputs each character one character after taking it in. So the
+ *   picture comes two characters after the 6845's timing. MOS's skew settings
+ *   match: display enable 1 (the latch), cursor 2 (the whole path).
  * - The hardware cursor inverts the colours of [VideoUla.cursorWidth]
- *   characters from the 6845's cursor position.
+ *   characters, starting where the 6845's cursor signal arrives.
  *
  * This follows MAME's `bbc_v.cpp`.
  */
@@ -46,6 +50,7 @@ class Video(
     private var line = 0
     private var displayWasEnabled = false
     private var cursorRemaining = 0
+    private var teletextLatch = 0
 
     override fun horizontalSync() {
         lineStartTick = clock.ticks
@@ -68,11 +73,16 @@ class Video(
         if (cursorRemaining > 0) cursorRemaining--
 
         val teletextMode = ula.teletext
-        if (teletextMode && displayEnabled) {
-            if (!displayWasEnabled) teletext.lineStart()
-            teletext.field = ra and 1
-            val code = if (ma and 0x2000 != 0) ram[ScreenAddress.of(ma, ra, latch.screenWrap) and 0x7FFF].toInt() else 0
-            teletext.character(code)
+        if (teletextMode) {
+            // The SAA5050 takes the byte latched one character ago, with display
+            // enable already delayed by the 6845's skew to match.
+            val code = teletextLatch
+            teletextLatch = if (ma and 0x2000 != 0) ram[ScreenAddress.of(ma, ra, latch.screenWrap) and 0x7FFF].toInt() else 0
+            if (displayEnabled) {
+                if (!displayWasEnabled) teletext.lineStart()
+                teletext.field = ra and 1
+                teletext.character(code)
+            }
         }
         displayWasEnabled = displayEnabled
 
@@ -80,20 +90,27 @@ class Video(
         if (fieldLine !in 0 until FIELD_LINES) return
         val width = if (ula.fastCharacterClock) 8 else 16
         val x = ((clock.ticks - lineStartTick) * 8).toInt() - LEFT_US * 16
-        if (x + width <= 0 || x >= WIDTH) return
+        if (x + width * 2 <= 0 || x >= WIDTH) return
 
         val interlaced = crtc.register(8) and 0x01 != 0
         val y = if (interlaced) fieldLine * 2 + crtc.field else fieldLine * 2
         val rows = if (interlaced) 1 else 2
 
         when {
-            !displayEnabled -> fill(x, y, rows, width) { COLOURS[0] }
             teletextMode -> {
+                // The cursor inverts what is on screen now: the character the
+                // SAA5050 output last time. This one appears a character later.
+                if (invert != 0) invertPixels(x, y, rows, width)
                 val dots = teletext.dots
-                val fg = COLOURS[teletext.foreground xor invert]
-                val bg = COLOURS[teletext.background xor invert]
-                fill(x, y, rows, width) { i -> if (dots and (0x800 shr (i * 12 / width)) != 0) fg else bg }
+                val fg = COLOURS[teletext.foreground]
+                val bg = COLOURS[teletext.background]
+                if (!displayEnabled) {
+                    fill(x + width, y, rows, width) { COLOURS[0] }
+                } else {
+                    fill(x + width, y, rows, width) { i -> if (dots and (0x800 shr (i * 12 / width)) != 0) fg else bg }
+                }
             }
+            !displayEnabled -> fill(x, y, rows, width) { COLOURS[0] }
             else -> {
                 var data = ram[ScreenAddress.of(ma, ra, latch.screenWrap) and 0x7FFF].toInt() and 0xFF
                 val pixelWidth = 16 / ula.pixelRate
@@ -105,6 +122,12 @@ class Video(
                     data = ((data shl 1) or 1) and 0xFF
                 }
             }
+        }
+    }
+
+    private fun invertPixels(x: Int, y: Int, rows: Int, width: Int) {
+        for (px in maxOf(x, 0) until minOf(x + width, WIDTH)) {
+            for (r in 0 until rows) pixels[(y + r) * WIDTH + px] = pixels[(y + r) * WIDTH + px] xor 0xFFFFFF
         }
     }
 

@@ -14,7 +14,10 @@ import java.awt.image.BufferedImage
 import java.awt.image.DataBufferInt
 import javax.swing.JPanel
 
-/** Shows the latest picture, scaled to fit with its 4:3 shape and letterboxed in black. */
+/**
+ * Shows the latest picture, cropped to [VIEW], scaled to fit with its 4:3 shape
+ * and letterboxed in black.
+ */
 class ScreenPanel(private val emulator: Emulator) : JPanel() {
     private val image = BufferedImage(Video.WIDTH, Video.HEIGHT, BufferedImage.TYPE_INT_RGB)
     private val pixels = (image.raster.dataBuffer as DataBufferInt).data
@@ -22,7 +25,7 @@ class ScreenPanel(private val emulator: Emulator) : JPanel() {
     var scale: Int = 1
         set(value) {
             field = value
-            preferredSize = Dimension(Video.WIDTH * value, Video.HEIGHT * value)
+            preferredSize = Dimension(VIEW.width * value, VIEW.height * value)
             revalidate()
         }
 
@@ -42,14 +45,27 @@ class ScreenPanel(private val emulator: Emulator) : JPanel() {
             RenderingHints.KEY_INTERPOLATION,
             RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR,
         )
-        g.drawImage(image, target.x, target.y, target.width, target.height, null)
+        g.drawImage(
+            image,
+            target.x, target.y, target.x + target.width, target.y + target.height,
+            VIEW.x, VIEW.y, VIEW.x + VIEW.width, VIEW.y + VIEW.height,
+            null,
+        )
     }
 
     companion object {
+        /**
+         * The part of the raster to show, 4:3 like the whole. MOS puts the 640 x 512
+         * display of modes 0-6 at (80, 20) in [Video]'s picture, so this leaves a
+         * border of 32 pixels at the sides and 8 at the top and bottom. MODE 7 starts
+         * further left, at x = 51, and still fits.
+         */
+        val VIEW = Rectangle(48, 12, 704, 528)
+
         /** Largest 4:3 rectangle centred in a width x height area. */
         fun fitRectangle(width: Int, height: Int): Rectangle {
-            val w = minOf(width, height * Video.WIDTH / Video.HEIGHT)
-            val h = w * Video.HEIGHT / Video.WIDTH
+            val w = minOf(width, height * VIEW.width / VIEW.height)
+            val h = w * VIEW.height / VIEW.width
             return Rectangle((width - w) / 2, (height - h) / 2, w, h)
         }
     }

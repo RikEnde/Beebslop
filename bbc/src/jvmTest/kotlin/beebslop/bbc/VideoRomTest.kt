@@ -25,9 +25,10 @@ class VideoRomTest {
     // 35; in modes 3, 6 and 7, 31 rows of 10 lines plus 2, with sync at row 28.
     private val top = (32 - Video.TOP_LINE) * 2
 
-    // MODE 7: the display starts 13 µs after horizontal sync (R0+1-R2 = 64-51
-    // characters). Characters are 16 pixels wide and rows 20 lines high.
-    private fun mode7X(column: Int) = (13 - Video.LEFT_US) * 16 + column * 16 + 8
+    // MODE 7: the 6845's display starts 13 µs after horizontal sync (R0+1-R2 =
+    // 64-51 characters), and the teletext path delays the picture by 2 more.
+    // Characters are 16 pixels wide and rows 20 lines high.
+    private fun mode7X(column: Int) = (15 - Video.LEFT_US) * 16 + column * 16 + 8
     private fun mode7Y(row: Int) = top + row * 20 + 10
 
     // MODE 2: 15 µs after horizontal sync ((128-98)/2). Characters are 32
@@ -76,6 +77,21 @@ class VideoRomTest {
         val stemX = (mode7X(1) - 8 until mode7X(1) + 8).first { x -> machine.pixel(x, mode7Y(0)) != 0 }
         val stem = (mode7Y(0)..mode7Y(1)).map { y -> machine.pixel(stemX, y) }
         assertTrue(stem.all { it == 0xFFFFFF }, stem.toString())
+    }
+
+    @Test
+    fun mode7CursorLinesUpWithItsCharacter() = withMachine { machine ->
+        machine.runForSeconds(2.0)
+        // The cursor follows the prompt on row 5: column 1, on raster lines 18-19
+        // of the cell (R10 = &72, R11 = &13). It blinks, so look over a second.
+        val cursorY = top + 5 * 20 + 18
+        val lit = mutableSetOf<Int>()
+        repeat(50) {
+            machine.runForSeconds(0.02)
+            for (x in 0 until Video.WIDTH) if (machine.pixel(x, cursorY) == 0xFFFFFF) lit += x
+        }
+        assertEquals(mode7X(1) - 8, lit.minOrNull(), "starts at column 1")
+        assertEquals(mode7X(1) + 7, lit.maxOrNull(), "one character wide")
     }
 
     @Test

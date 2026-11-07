@@ -16,7 +16,7 @@ import kotlin.system.exitProcess
 
 const val USAGE = """Usage: beebslop [options]
   --roms DIR          Directory with os.rom and basic.rom (default: roms)
-  --scale 1|2         Window size; 1 is 768 x 576 (default: 1)
+  --scale 1|2         Window size; 1 is 704 x 528 (default: 1)
   --screenshot FILE   Run without a window, save a PNG of the picture, then exit
   --frames N          50ths of a second to run before the screenshot (default: 150)
   --log-keys          Print each host key event and the BBC key it maps to"""
@@ -77,8 +77,9 @@ class Roms(val os: ByteArray, val basic: ByteArray) {
 fun saveScreenshot(roms: Roms, frames: Int, file: File) {
     val machine = roms.newMachine()
     repeat(frames) { Emulator.runFrame(machine) }
-    val image = BufferedImage(Video.WIDTH, Video.HEIGHT, BufferedImage.TYPE_INT_RGB)
-    image.setRGB(0, 0, Video.WIDTH, Video.HEIGHT, machine.video.pixels, 0, Video.WIDTH)
+    val view = ScreenPanel.VIEW
+    val image = BufferedImage(view.width, view.height, BufferedImage.TYPE_INT_RGB)
+    image.setRGB(0, 0, view.width, view.height, machine.video.pixels, view.y * Video.WIDTH + view.x, Video.WIDTH)
     file.absoluteFile.parentFile?.mkdirs()
     ImageIO.write(image, "png", file)
 }
