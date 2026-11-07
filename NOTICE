@@ -7,13 +7,20 @@ REUSE.toml as third-party keep their own licenses; see LICENSES/.
 The cpu module is copied from Elkslop (https://github.com/RikEnde/elkslop),
 Copyright 2026 The Elkslop contributors, under the same BSD 3-Clause License.
 These files are adapted from Elkslop's desktop front end, under the same
-license: bbc/.../Typist.kt (from TextTyper.kt), desktop/.../KeyMapping.kt,
+license: bbc/.../Typist.kt (from TextTyper.kt), bbc/.../Tape.kt (from
+UefTape.kt and UlaCassette.kt), desktop/.../TapeFile.kt, desktop/.../KeyMapping.kt,
 desktop/.../NaturalKeyboard.kt, desktop/.../AudioOutput.kt and
 desktop/.../AppIcon.kt (the drawing code; the owl is new).
 
 The BBC Microcomputer ROM images (roms/os.rom, roms/basic.rom) are copyright
 Acorn Computers Ltd and are included without a licence; they are not covered by
 the BSD License. See LICENSES/LicenseRef-Acorn-ROM.txt.
+
+The cassette images (tapes/*.uef) are copyright Acorn Computers Ltd and are
+included on the same terms. See tapes/README.md.
+
+bbc/src/jvmTest/.../TapeLoadTest.kt is adapted from Elkslop's TapeLoadTest.kt,
+under the same BSD 3-Clause License.
 
 ------------------------------------------------------------------------------
 MAME
@@ -35,7 +42,7 @@ commit e1c41b59c0027df7290229f6008393e5ab72013c), which use the same BSD
     copyright-holders: Wilbert Pol, Nigel Barnes
   Acia6850.kt: src/devices/machine/6850acia.cpp
     copyright-holders: smf
-  Acia6850.kt (SerialUla): src/mame/acorn/acorn_serproc.cpp
+  SerialUla.kt: src/mame/acorn/acorn_serproc.cpp
     copyright-holders: Nigel Barnes
   Sn76489.kt: src/devices/sound/sn76496.cpp
     copyright-holders: Nicola Salmoria

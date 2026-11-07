@@ -7,6 +7,7 @@ import beebslop.bbc.BbcClock
 import beebslop.bbc.BbcMachine
 import beebslop.bbc.KeyboardMatrix.Key
 import beebslop.bbc.KeyboardText
+import beebslop.bbc.Tape
 import beebslop.bbc.Typist
 import beebslop.bbc.Video
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -18,7 +19,9 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * Only the emulation thread touches the machine. Other threads talk to it
  * through [post] and read the picture through [copyFrame]. With sound on, the
  * blocking audio device sets the pace (its sample clock is the master clock);
- * without sound, the thread sleeps to match emulated time to wall time.
+ * without sound, the thread sleeps to match emulated time to wall time. With
+ * [fastTape] on, it runs flat out while the cassette motor runs, so software
+ * still sees the real timing and can't tell.
  */
 class Emulator(
     private val createMachine: () -> BbcMachine,
@@ -34,6 +37,9 @@ class Emulator(
 
         /** Called on the emulation thread when the CAPS LOCK or SHIFT LOCK LED changes. */
         fun ledsChanged(capsLock: Boolean, shiftLock: Boolean) {}
+
+        /** Called on the emulation thread when the cassette motor starts or stops. */
+        fun motorChanged(on: Boolean) {}
     }
 
     private val commands = ConcurrentLinkedQueue<(BbcMachine) -> Unit>()
@@ -44,10 +50,13 @@ class Emulator(
     private var machine = createMachine()
     private var thread: Thread? = null
     private var leds: Pair<Boolean, Boolean>? = null
+    private var motorRunning = false
+    private var tape: Tape? = null
 
     @Volatile private var running = false
     @Volatile var paused = false
     @Volatile var volume = 1f
+    @Volatile var fastTape = false
     @Volatile var frameCount = 0L
         private set
 
@@ -106,11 +115,27 @@ class Emulator(
 
     fun cancelTyping() = post { typist.cancel(it) }
 
-    /** Switch off and on: fresh RAM and chips, and a cold start. */
+    /** Put a cassette in the recorder, as it is wound. */
+    fun insertTape(cassette: Tape) = post {
+        tape = cassette
+        it.serialUla.tape = cassette
+    }
+
+    fun ejectTape() = post {
+        tape = null
+        it.serialUla.tape = null
+    }
+
+    fun rewindTape() = post { tape?.rewind() }
+
+    /** The cassette as a UEF image, delivered to [receive] on the emulation thread. */
+    fun exportTape(receive: (ByteArray?) -> Unit) = post { receive(tape?.toUef()) }
+
+    /** Switch off and on: fresh RAM and chips, and a cold start. The cassette stays in. */
     fun powerCycle() = post {
         typist.cancel(it)
         natural.reset()
-        machine = createMachine()
+        machine = createMachine().also { fresh -> fresh.serialUla.tape = tape }
         paused = false
     }
 
@@ -151,6 +176,12 @@ class Emulator(
                 listener.stopped(e)
                 continue
             }
+            if (fastTape && tapeMoving()) {
+                soundMachine?.sound?.drainSamples(samples)
+                paceStart = System.nanoTime()
+                paceTicks = 0
+                continue
+            }
             if (audio != null) {
                 audio.write(samples, soundMachine!!.sound.drainSamples(samples), volume)
                 continue
@@ -167,6 +198,13 @@ class Emulator(
         }
     }
 
+    /** The motor runs with a tape to play or record; past the end there's nothing to hurry to. */
+    private fun tapeMoving(): Boolean {
+        val ula = machine.serialUla
+        val cassette = tape ?: return false
+        return ula.motorOn && (ula.recording || !cassette.atEnd)
+    }
+
     /** Runs one frame and publishes the picture; returns the elapsed machine ticks. */
     private fun runField(): Long {
         val machine = machine
@@ -175,6 +213,11 @@ class Emulator(
         val elapsed = runFrame(machine)
         synchronized(frameLock) { machine.video.pixels.copyInto(published) }
         listener.frameReady(++frameCount)
+        val motor = machine.serialUla.motorOn
+        if (motor != motorRunning) {
+            motorRunning = motor
+            listener.motorChanged(motor)
+        }
         val lit = machine.latch.capsLockLed to machine.latch.shiftLockLed
         if (lit != leds) {
             leds = lit

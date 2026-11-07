@@ -5,7 +5,9 @@ package beebslop.desktop
 
 import beebslop.bbc.KeyboardMatrix.Key
 import beebslop.bbc.KeyboardText
+import beebslop.bbc.Tape
 import java.awt.BorderLayout
+import java.awt.FileDialog
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import java.awt.event.ActionEvent
@@ -16,6 +18,8 @@ import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
+import java.io.File
+import java.io.IOException
 import javax.swing.AbstractAction
 import javax.swing.ButtonGroup
 import javax.swing.JCheckBoxMenuItem
@@ -40,6 +44,8 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
     private var naturalLayout = false
     @Volatile private var capsLock = false
     @Volatile private var shiftLock = false
+    @Volatile private var motorRunning = false
+    private var tapeName: String? = null
 
     fun show() {
         frame.defaultCloseOperation = WindowConstants.DISPOSE_ON_CLOSE
@@ -63,6 +69,8 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
         frame.setLocationRelativeTo(null)
         frame.isVisible = true
         screen.requestFocusInWindow()
+        options.tape?.let { insertTape(it) }
+        options.typeText?.let { emulator.type(it, delayFrames = BOOT_FRAMES) }
         emulator.start()
     }
 
@@ -80,6 +88,11 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
                 JOptionPane.ERROR_MESSAGE,
             )
         }
+    }
+
+    override fun motorChanged(on: Boolean) {
+        motorRunning = on
+        SwingUtilities.invokeLater { updateTitle() }
     }
 
     override fun ledsChanged(capsLock: Boolean, shiftLock: Boolean) {
@@ -206,6 +219,30 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
             add(item("Stop Typing", null) { emulator.cancelTyping() })
         })
         add(createKeysMenu())
+        add(JMenu("Tape").apply {
+            add(item("Insert Tape...", shortcut(KeyEvent.VK_O)) { chooseTape() })
+            add(item("New Blank Tape", null) {
+                emulator.insertTape(Tape.blank())
+                tapeName = "blank tape"
+                updateTitle()
+            })
+            add(item("Save Tape As...", shortcut(KeyEvent.VK_S)) { saveTape() })
+            addSeparator()
+            add(item("Rewind", null) { emulator.rewindTape() })
+            add(item("Eject", null) {
+                emulator.ejectTape()
+                tapeName = null
+                updateTitle()
+            })
+            addSeparator()
+            add(JCheckBoxMenuItem("Fast Loading").apply {
+                toolTipText = "Run flat out while the cassette motor runs, instead of at 1200 baud"
+                addActionListener {
+                    emulator.fastTape = isSelected
+                    updateTitle()
+                }
+            })
+        })
         add(JMenu("View").apply {
             val group = ButtonGroup()
             for (scale in 1..2) {
@@ -290,7 +327,59 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
             (if (capsLock) "  [CAPS]" else "") +
             (if (shiftLock) "  [SHIFT LOCK]" else "") +
             (if (naturalLayout) "  [NATURAL]" else "") +
+            (tapeName?.let { "  [$it]" } ?: "") +
+            (if (emulator.fastTape) "  [FAST]" else "") +
+            (if (motorRunning) "  [MOTOR]" else "") +
             (if (emulator.paused) "  (paused)" else "")
+    }
+
+    private fun chooseTape() {
+        val dialog = FileDialog(frame, "Insert Tape", FileDialog.LOAD)
+        dialog.directory = File("tapes").absolutePath
+        dialog.isVisible = true
+        val name = dialog.file
+        if (name != null) insertTape(File(dialog.directory, name))
+        screen.requestFocusInWindow()
+    }
+
+    private fun insertTape(file: File) {
+        try {
+            emulator.insertTape(TapeFile.load(file))
+            tapeName = file.name
+            updateTitle()
+        } catch (e: IOException) {
+            JOptionPane.showMessageDialog(frame, "Couldn't load ${file.name}:\n${e.message ?: e}", "Insert Tape", JOptionPane.ERROR_MESSAGE)
+        }
+    }
+
+    /** Writes the cassette, with anything recorded on it, to a UEF file. */
+    private fun saveTape() {
+        val dialog = FileDialog(frame, "Save Tape As", FileDialog.SAVE)
+        dialog.directory = File("tapes").absolutePath
+        dialog.file = tapeName?.takeIf { it.endsWith(".uef") } ?: "tape.uef"
+        dialog.isVisible = true
+        val name = dialog.file
+        if (name == null) {
+            screen.requestFocusInWindow()
+            return
+        }
+        val file = File(dialog.directory, if (name.endsWith(".uef")) name else "$name.uef")
+        emulator.exportTape { image ->
+            SwingUtilities.invokeLater {
+                if (image == null) {
+                    JOptionPane.showMessageDialog(frame, "There is no tape in the recorder.", "Save Tape", JOptionPane.WARNING_MESSAGE)
+                    return@invokeLater
+                }
+                try {
+                    TapeFile.save(image, file)
+                    tapeName = file.name
+                    updateTitle()
+                } catch (e: IOException) {
+                    JOptionPane.showMessageDialog(frame, "Couldn't save ${file.name}:\n${e.message ?: e}", "Save Tape", JOptionPane.ERROR_MESSAGE)
+                }
+            }
+        }
+        screen.requestFocusInWindow()
     }
 
     private fun pasteClipboard() {
@@ -336,6 +425,10 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
 
             The title bar shows [CAPS] and [SHIFT LOCK] while their lights are on.
             Paste as Typing types text from the clipboard; lower case turns CAPS LOCK off.
+
+            Tapes: insert one from the Tape menu, then type CHAIN "" and RETURN.
+            To save, use Tape > New Blank Tape, SAVE "NAME", then Tape > Save Tape As.
+            Tape > Fast Loading skips the wait; [MOTOR] shows the motor is running.
             """.trimIndent(),
             "Keyboard",
             JOptionPane.PLAIN_MESSAGE,

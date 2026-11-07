@@ -1,6 +1,8 @@
 BBC Microcomputer ROM images (roms/os.rom: MOS 1.20; roms/basic.rom: BBC BASIC II)
+and cassette images (tapes/*.uef)
 
-Copyright (C) 1981-1982 Acorn Computers Ltd. All rights reserved.
+ROM images: Copyright (C) 1981-1982 Acorn Computers Ltd. All rights reserved.
+Cassette images: Copyright (C) Acorn Computers Ltd. All rights reserved.
 
 These files are not covered by Beebslop's BSD 3-Clause License, and no licence
 for them has been granted to the Beebslop project. They are included, as is

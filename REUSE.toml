@@ -23,6 +23,12 @@ SPDX-FileCopyrightText = "1981-1982 Acorn Computers Ltd"
 SPDX-License-Identifier = "LicenseRef-Acorn-ROM"
 
 [[annotations]]
+path = ["tapes/*.uef"]
+precedence = "override"
+SPDX-FileCopyrightText = "Acorn Computers Ltd"
+SPDX-License-Identifier = "LicenseRef-Acorn-ROM"
+
+[[annotations]]
 path = ["gradlew", "gradlew.bat", "gradle/wrapper/**"]
 precedence = "override"
 SPDX-FileCopyrightText = "2015-2021 the original authors (Gradle)"

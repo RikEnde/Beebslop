@@ -9,8 +9,8 @@ run the real ROMs.
 ## Status
 
 Early. MOS 1.20 boots to the BASIC prompt in a desktop window, draws the
-screen in every mode, takes keyboard input and plays sound; there is no
-cassette or disc yet.
+screen in every mode, takes keyboard input, plays sound, and loads and saves
+programs on cassette (UEF images); there is no disc yet.
 
 | Part | State |
 |---|---|
@@ -20,7 +20,7 @@ cassette or disc yet.
 | MODE 7 (SAA5050 teletext), then modes 0-6 | Done |
 | Keyboard: host mapping (physical and natural), paste as typing | Done |
 | Sound (SN76489) | Done |
-| Cassette (6850 ACIA, serial ULA, UEF) | Not started |
+| Cassette (6850 ACIA, serial ULA, UEF) | Done |
 | Disc (8271, DFS, SSD/DSD) | Not started |
 | Econet (68B54 ADLC), networking several instances | Not started |
 
@@ -44,6 +44,7 @@ Each step ends with a headless test on the real ROMs.
    typist. Done.
 6. **Sound:** the SN76489. Done.
 7. **Cassette:** the 6850 ACIA, serial ULA and UEF images, with fast loading.
+   Done.
 8. **Disc:** the Intel 8271, as fitted to the original Model B, with Acorn DFS
    and SSD/DSD images. We still need a DFS 0.90 or 1.20 dump for the 8271.
 9. **Econet:** the 68B54 ADLC and station ID, so that **several running instances
@@ -88,6 +89,7 @@ marked `CC0-1.0 AND LicenseRef-CDPA-s55`; see
 ./run.sh                           # open the emulator window
 ./run.sh --scale 2                 # a 1408 x 1056 window
 ./run.sh --screenshot boot.png     # no window: boot, save a PNG, exit
+./run.sh --tape tapes/welcome-english.uef --type 'CHAIN ""\n'   # load and run from tape
 ./run.sh --help
 ```
 
@@ -101,11 +103,14 @@ ROMs are read from `roms/`, or from `--roms DIR`.
 | `--scale 1\|2` | Window size; 1 is 704 x 528 (default: 1) |
 | `--screenshot FILE` | Run without a window, save a PNG of the picture, then exit |
 | `--frames N` | 50ths of a second to run before the screenshot (default: 150) |
+| `--tape FILE` | Put a UEF cassette image in the recorder |
+| `--type TEXT` | Type TEXT after boot; `\n` starts a new line |
 | `--no-sound` | Run without sound |
 | `--log-keys` | Print each host key event and the BBC key it maps to |
 
 The window shows the picture and runs in real time. **Machine** has Pause
 (Cmd+P, or Ctrl+Shift+P off macOS), Power Cycle and a Sound switch; **Edit** has Paste as Typing;
+**Tape** inserts, rewinds, ejects and saves cassettes, and turns on Fast Loading;
 **Keys** has BREAK and its variants, keys a host keyboard lacks, f0-f9 and the
 keyboard layout; **View** sets the size; **Help > Keyboard** lists the keys.
 
@@ -136,6 +141,27 @@ CAPS LOCK on, a letter is a capital with or without SHIFT, as on the real
 machine. Paste as Typing turns CAPS LOCK off when it meets lower case, and skips
 characters the BBC can't type, such as `` ` ``.
 
+### Tapes
+
+Cassettes are [UEF](https://en.wikipedia.org/wiki/Unified_Emulator_Format)
+images, gzipped or plain. **Tape > Insert Tape...** puts one in the recorder;
+then `CHAIN ""` loads and runs the next program, and `*CAT` lists what's on the
+tape. Tapes play at the real 1200 baud, about 120 bytes a second; **Tape > Fast
+Loading** runs flat out while the motor is on. The title bar shows the tape's
+name, `[FAST]` and `[MOTOR]`.
+
+To save, choose **Tape > New Blank Tape** (or keep a tape in to record over it
+from where it's wound), type `SAVE "NAME"` and press RETURN at "RECORD then
+RETURN". **Tape > Save Tape As...** then writes the whole tape to a `.uef` file.
+Rewind before loading what you just saved. Electron tapes in the same format
+load too, for programs that don't need the Electron's hardware.
+
+[`tapes/`](tapes/README.md) holds the Welcome cassette that came with the BBC
+Micro, in English and German, as UEF images from the
+[Stairway to Hell](https://www.stairwaytohell.com/) archive. They are © Acorn and
+not covered by Beebslop's licence. [tapes/README.md](tapes/README.md) lists
+what's on each one and where it came from.
+
 ## Platform independence
 
 The emulation core lives in `commonMain` source sets and depends only on the
@@ -146,14 +172,14 @@ uses Swing.
 
 ## Build and test
 
-Use a JDK 17 or newer. The Gradle wrapper pins Gradle 8.10 and verifies its
-archive checksum; Kotlin is pinned to 2.2.21.
+Use a JDK 17 or newer. The Gradle wrapper pins Gradle 9.7.0 and verifies its
+archive checksum; Kotlin is pinned to 2.4.21.
 
 ```sh
 ./gradlew :cpu:jvmTest :bbc:jvmTest
 ```
 
-Tests use checked-in fixtures and ROMs; they download nothing.
+Tests use checked-in fixtures, ROMs and tapes; they download nothing.
 
 ## CPU module
 
@@ -310,7 +336,9 @@ The production code is in `bbc/src/commonMain/kotlin/beebslop/bbc`.
 | `Saa5050.kt` | The SAA5050 teletext character generator for MODE 7 |
 | `TeletextFont.kt` | The SAA5050's character shapes, generated from Bedstead |
 | `Sn76489.kt` | The SN76489A sound chip, and resampling for the host |
-| `Acia6850.kt` | The 6850 ACIA's and serial ULA's registers |
+| `Acia6850.kt` | The 6850 ACIA: receiver, transmitter, DCD and interrupts |
+| `SerialUla.kt` | The serial ULA: cassette cells, motor relay and baud clocks |
+| `Tape.kt` | A cassette: playing, recording, and reading and writing UEF images |
 
 ### Memory map
 
@@ -325,8 +353,8 @@ The production code is in `bbc/src/commonMain/kotlin/beebslop/bbc`.
 | SHEILA | Device | Bus cycle | Emulated |
 |---|---|---|---|
 | `&00-&07` | 6845 CRTC | 1 MHz | Registers, counters, vsync |
-| `&08-&0F` | 6850 ACIA | 1 MHz | Registers and interrupts |
-| `&10-&17` | Serial ULA | 1 MHz | Register |
+| `&08-&0F` | 6850 ACIA | 1 MHz | Yes; RS423 has nothing connected |
+| `&10-&17` | Serial ULA | 1 MHz | Cassette; RS423 has nothing connected |
 | `&18-&1F` | STATID (Econet station number) | 1 MHz | No |
 | `&20-&2F` | Video ULA | 2 MHz | Registers |
 | `&30-&3F` | ROMSEL | 2 MHz | Yes |
@@ -402,8 +430,20 @@ The wiring follows MAME's `bbcb.cpp` and the *Advanced User Guide*, chapter 23.
   it. This follows MAME's `sn76496.cpp`. For the host, the output is averaged
   over each sample and passed through a DC-blocking filter, like the BBC's
   output capacitor.
-- **Placeholders.** The ACIA and serial ULA hold their registers, but no bits
-  move: transmitted bytes are dropped.
+- **Cassette.** The tape is modelled as cells of 1/1200 s, each one cycle of
+  1200 Hz (a 0) or two of 2400 Hz (a 1), or silence: 1664 machine ticks, from
+  the serial ULA's 16 MHz / 13 / 1024. While the motor relay (serial ULA bit 7)
+  is on, each cell plays to the ACIA, which gets the bit and 16 receive clocks,
+  as in MAME's `acorn_serproc.cpp`. So the ACIA at divide by 16 reads 1200 baud,
+  and at 64, 300 baud. More than 100 ones in a row raise DCD, which MOS uses to
+  find the leader tone. While the ACIA holds RTS low, the cells record its
+  transmit data instead. MOS 1.20 sets the serial ULA to `&85` and the ACIA to
+  `&15` (divide by 16, 8N1) to save. The ACIA follows MAME's `6850acia.cpp`,
+  with two changes found by saving with MOS: a byte written to an idle
+  transmitter starts at the next bit boundary, not the next clock, because MOS's
+  cassette interrupt routine (`&F588`) relies on that gap, and waiting bytes go
+  back to back without an extra clock, which would otherwise drift against the
+  tape cells.
 
 ### Video
 
@@ -456,7 +496,11 @@ the middle of a frame appear where they happen. The rendering follows MAME's
 - The latch, keyboard polling, scanning and links, sound chip registers, CRTC
   register masks and read-back, vertical sync length, and MODE 7's 50 Hz field.
 - Screen addresses for MODE 7, MODE 0 and the wrap-around of every screen size.
-- The ACIA's status and transmit interrupt.
+- The ACIA's status and transmit interrupt, receiving a framed byte, the DCD
+  interrupt and how reading clears it, back-to-back transmission, and an idle
+  transmitter starting at a bit boundary.
+- Tapes: every UEF chunk type read, 300 baud, playing past the end, recording
+  over and past the end, and writing a UEF image that reads back the same.
 - The sound chip: tone pitch, period 0, the attenuation steps, periodic and
   white noise, and resampled output with no DC offset.
 
@@ -481,6 +525,14 @@ and its beep come from separate strings that it prints only at power-on. Fitting
 start-up links 6-8 boots in MODE 0. BASIC is found in ROM 15 and its three
 aliases, and the I/O pages hide the MOS bytes beneath them. MOS silences the
 sound chip at reset, and VDU 7 sounds a tone that stops again.
+
+The cassette tests `SAVE` a BASIC program to a blank tape: MOS starts the motor
+and asks for RECORD, then writes about 11 s of tape. The tape goes through a UEF
+image and back, then `LOAD` on a fresh machine reads it at 1200 baud and `LIST`
+shows the program. A tape with one cell flipped near the end of the block gives
+`Data?`. `TapeLoadTest` loads INTRO from both Welcome cassettes in `tapes/` and
+compares RAM with the file on the tape. On the desktop, Fast Loading loads the same tape at more than 3 times
+real time.
 
 The typing tests press keys in the matrix as the typist does. They type
 `10 REM` followed by every character the BBC can type and read the line back

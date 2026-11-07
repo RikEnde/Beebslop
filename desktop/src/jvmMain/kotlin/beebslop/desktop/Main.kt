@@ -4,6 +4,7 @@
 package beebslop.desktop
 
 import beebslop.bbc.BbcMachine
+import beebslop.bbc.Typist
 import beebslop.bbc.Video
 import java.awt.GraphicsEnvironment
 import java.awt.image.BufferedImage
@@ -14,11 +15,16 @@ import javax.swing.JOptionPane
 import javax.swing.SwingUtilities
 import kotlin.system.exitProcess
 
+/** Frames to wait after power-on before typing: the OS needs about 2 s to boot. */
+const val BOOT_FRAMES = 100
+
 const val USAGE = """Usage: beebslop [options]
   --roms DIR          Directory with os.rom and basic.rom (default: roms)
   --scale 1|2         Window size; 1 is 704 x 528 (default: 1)
   --screenshot FILE   Run without a window, save a PNG of the picture, then exit
   --frames N          50ths of a second to run before the screenshot (default: 150)
+  --tape FILE         Put a UEF cassette image in the recorder
+  --type TEXT         Type TEXT after boot; \n starts a new line
   --no-sound          Run without sound
   --log-keys          Print each host key event and the BBC key it maps to"""
 
@@ -29,6 +35,8 @@ data class Options(
     val screenshotFrames: Int = 150,
     val logKeys: Boolean = false,
     val sound: Boolean = true,
+    val tape: File? = null,
+    val typeText: String? = null,
 ) {
     companion object {
         fun parse(args: Array<String>): Options {
@@ -45,6 +53,8 @@ data class Options(
                         ?: throw IllegalArgumentException("--frames must be a positive number"))
                     "--log-keys" -> options.copy(logKeys = true)
                     "--no-sound" -> options.copy(sound = false)
+                    "--tape" -> options.copy(tape = File(value()))
+                    "--type" -> options.copy(typeText = value().replace("\\n", "\n"))
                     "--help", "-h" -> {
                         println(USAGE)
                         exitProcess(0)
@@ -76,10 +86,20 @@ class Roms(val os: ByteArray, val basic: ByteArray) {
     }
 }
 
-/** Runs [frames] frames (50ths of a second) as fast as possible and writes the picture to [file]. */
-fun saveScreenshot(roms: Roms, frames: Int, file: File) {
+/**
+ * Runs [Options.screenshotFrames] frames (50ths of a second) as fast as possible,
+ * with the [Options.tape] and [Options.typeText] if given, and writes the picture
+ * to [file].
+ */
+fun saveScreenshot(roms: Roms, options: Options, file: File) {
     val machine = roms.newMachine()
-    repeat(frames) { Emulator.runFrame(machine) }
+    options.tape?.let { machine.serialUla.tape = TapeFile.load(it) }
+    val typist = Typist()
+    options.typeText?.let { typist.enqueue(it, delayFrames = BOOT_FRAMES) }
+    repeat(options.screenshotFrames) {
+        typist.onFrame(machine)
+        Emulator.runFrame(machine)
+    }
     val view = ScreenPanel.VIEW
     val image = BufferedImage(view.width, view.height, BufferedImage.TYPE_INT_RGB)
     image.setRGB(0, 0, view.width, view.height, machine.video.pixels, view.y * Video.WIDTH + view.x, Video.WIDTH)
@@ -109,7 +129,12 @@ fun main(args: Array<String>) {
         exitProcess(1)
     }
     options.screenshot?.let {
-        saveScreenshot(roms, options.screenshotFrames, it)
+        try {
+            saveScreenshot(roms, options, it)
+        } catch (e: IOException) {
+            System.err.println("Couldn't load ${options.tape}: ${e.message}")
+            exitProcess(1)
+        }
         println("Saved ${it.path}")
         return
     }

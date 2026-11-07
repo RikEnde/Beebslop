@@ -17,9 +17,10 @@ import beebslop.cpu.Cpu6502
  *   joystick buttons pressed, no speech chip).
  * - CA1 is the 6845's vertical sync; CA2 is the keyboard interrupt.
  * - IRQ is the OR of both VIAs and the ACIA.
+ * - The ACIA and serial ULA run the cassette; RS423 has nothing connected.
  *
- * The ACIA and serial ULA have registers only. The disc and Econet controllers,
- * ADC and Tube are not yet emulated, and read as absent.
+ * The disc and Econet controllers, ADC and Tube are not yet emulated, and read
+ * as absent.
  */
 class BbcMachine(osRom: ByteArray, basicRom: ByteArray) {
     val ram = ByteArray(0x8000)
@@ -34,7 +35,7 @@ class BbcMachine(osRom: ByteArray, basicRom: ByteArray) {
     val crtc = Crtc6845()
     val videoUla = VideoUla()
     val acia = Acia6850()
-    val serialUla = SerialUla()
+    val serialUla = SerialUla(acia)
 
     /** The slow data bus between system VIA port A, the keyboard and the sound chip. */
     private var slowDataBus = 0xFF
@@ -119,6 +120,7 @@ class BbcMachine(osRom: ByteArray, basicRom: ByteArray) {
 
     private fun tick(ticks: Long) {
         sound.tick()
+        serialUla.tick()
         val oneMhzEdge = ticks and 1L == 0L
         if (oneMhzEdge) {
             systemVia.tick()
