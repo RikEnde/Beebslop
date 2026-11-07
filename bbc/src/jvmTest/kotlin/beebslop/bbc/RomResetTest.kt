@@ -53,6 +53,19 @@ class RomResetTest {
     }
 
     @Test
+    fun theOsSilencesTheSoundChipAndVdu7Beeps() = withMachine { machine ->
+        machine.runForSeconds(0.05)
+        assertTrue(machine.sound.writes > 0, "MOS writes the sound chip at reset")
+        machine.runForSeconds(2.0)
+        assertEquals(listOf(15, 15, 15, 15), machine.sound.attenuation.toList(), "silent at the prompt")
+        machine.vdu(7)
+        machine.runForSeconds(0.05)
+        assertTrue(machine.sound.attenuation.take(3).any { it < 15 }, "the bell sounds a tone")
+        machine.runForSeconds(1.0)
+        assertEquals(listOf(15, 15, 15, 15), machine.sound.attenuation.toList(), "and stops")
+    }
+
+    @Test
     fun breakIsAWarmStartThatKeepsBasic() = withMachine { machine ->
         machine.runForSeconds(2.0)
         machine.reset()

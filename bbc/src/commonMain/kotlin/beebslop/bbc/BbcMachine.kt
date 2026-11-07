@@ -38,6 +38,7 @@ class BbcMachine(osRom: ByteArray, basicRom: ByteArray) {
 
     /** The slow data bus between system VIA port A, the keyboard and the sound chip. */
     private var slowDataBus = 0xFF
+    private var soundWriting = false
 
     val systemVia = Via6522(object : ViaPorts {
         override fun readA(driven: Int): Int {
@@ -117,6 +118,7 @@ class BbcMachine(osRom: ByteArray, basicRom: ByteArray) {
     }
 
     private fun tick(ticks: Long) {
+        sound.tick()
         val oneMhzEdge = ticks and 1L == 0L
         if (oneMhzEdge) {
             systemVia.tick()
@@ -130,7 +132,9 @@ class BbcMachine(osRom: ByteArray, basicRom: ByteArray) {
     }
 
     private fun updateSlowDataBus() {
-        if (latch.soundWriteEnabled) sound.write(slowDataBus)
+        // The SN76489 takes the byte as its write enable (latch B0) goes low.
+        if (latch.soundWriteEnabled && !soundWriting) sound.write(slowDataBus)
+        soundWriting = latch.soundWriteEnabled
         if (latch.keyboardPolled) {
             slowDataBus = keyboard.poll(slowDataBus)
             systemVia.setCa2(keyboard.keyInColumn)

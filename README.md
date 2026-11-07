@@ -9,8 +9,8 @@ run the real ROMs.
 ## Status
 
 Early. MOS 1.20 boots to the BASIC prompt in a desktop window, draws the
-screen in every mode, and takes keyboard input; there is no sound, cassette or
-disc yet.
+screen in every mode, takes keyboard input and plays sound; there is no
+cassette or disc yet.
 
 | Part | State |
 |---|---|
@@ -19,7 +19,7 @@ disc yet.
 | System VIA, CRTC, video ULA; boot to the BASIC prompt | Done |
 | MODE 7 (SAA5050 teletext), then modes 0-6 | Done |
 | Keyboard: host mapping (physical and natural), paste as typing | Done |
-| Sound (SN76489) | Not started |
+| Sound (SN76489) | Done |
 | Cassette (6850 ACIA, serial ULA, UEF) | Not started |
 | Disc (8271, DFS, SSD/DSD) | Not started |
 | Econet (68B54 ADLC), networking several instances | Not started |
@@ -42,7 +42,7 @@ Each step ends with a headless test on the real ROMs.
    Done.
 5. **Keyboard:** the matrix, autoscan, host mapping (physical and natural) and a
    typist. Done.
-6. **Sound:** the SN76489.
+6. **Sound:** the SN76489. Done.
 7. **Cassette:** the 6850 ACIA, serial ULA and UEF images, with fast loading.
 8. **Disc:** the Intel 8271, as fitted to the original Model B, with Acorn DFS
    and SSD/DSD images. We still need a DFS 0.90 or 1.20 dump for the 8271.
@@ -101,10 +101,11 @@ ROMs are read from `roms/`, or from `--roms DIR`.
 | `--scale 1\|2` | Window size; 1 is 704 x 528 (default: 1) |
 | `--screenshot FILE` | Run without a window, save a PNG of the picture, then exit |
 | `--frames N` | 50ths of a second to run before the screenshot (default: 150) |
+| `--no-sound` | Run without sound |
 | `--log-keys` | Print each host key event and the BBC key it maps to |
 
 The window shows the picture and runs in real time. **Machine** has Pause
-(Cmd+P, or Ctrl+Shift+P off macOS) and Power Cycle; **Edit** has Paste as Typing;
+(Cmd+P, or Ctrl+Shift+P off macOS), Power Cycle and a Sound switch; **Edit** has Paste as Typing;
 **Keys** has BREAK and its variants, keys a host keyboard lacks, f0-f9 and the
 keyboard layout; **View** sets the size; **Help > Keyboard** lists the keys.
 
@@ -308,7 +309,7 @@ The production code is in `bbc/src/commonMain/kotlin/beebslop/bbc`.
 | `Video.kt` | The picture, built one character at a time from the 6845's outputs |
 | `Saa5050.kt` | The SAA5050 teletext character generator for MODE 7 |
 | `TeletextFont.kt` | The SAA5050's character shapes, generated from Bedstead |
-| `Sn76489.kt` | The sound chip's registers |
+| `Sn76489.kt` | The SN76489A sound chip, and resampling for the host |
 | `Acia6850.kt` | The 6850 ACIA's and serial ULA's registers |
 
 ### Memory map
@@ -391,9 +392,18 @@ The wiring follows MAME's `bbcb.cpp` and the *Advanced User Guide*, chapter 23.
   for mode 3, 1 1 for modes 4-5 and 0 1 for mode 6, and MAME's address logic
   wraps each to the right screen start. The table in the online copy of the
   *Advanced User Guide* (23.2) has the values for modes 0-2 and 4-5 swapped.
+- **Sound.** The SN76489A is the variant in MAME's BBC driver, clocked at 4 MHz
+  and dividing by 16, so its counters step at 250 kHz: every 8 machine ticks.
+  A tone flips every N counts (250 kHz / 2N; N = 0 acts as 1024). Noise is a
+  16-bit shift register with taps 2 and 3 for white noise, stepped every 32, 64
+  or 128 counts or at half tone 2's rate, and reset when its register is written.
+  Attenuation is 2 dB a step and 15 is off. The chip takes a byte as latch B0
+  goes low. At power-on it plays all channels at full volume until MOS silences
+  it. This follows MAME's `sn76496.cpp`. For the host, the output is averaged
+  over each sample and passed through a DC-blocking filter, like the BBC's
+  output capacitor.
 - **Placeholders.** The ACIA and serial ULA hold their registers, but no bits
-  move: transmitted bytes are dropped. The sound chip records its registers but
-  makes no sound.
+  move: transmitted bytes are dropped.
 
 ### Video
 
@@ -447,6 +457,8 @@ the middle of a frame appear where they happen. The rendering follows MAME's
   register masks and read-back, vertical sync length, and MODE 7's 50 Hz field.
 - Screen addresses for MODE 7, MODE 0 and the wrap-around of every screen size.
 - The ACIA's status and transmit interrupt.
+- The sound chip: tone pitch, period 0, the attenuation steps, periodic and
+  white noise, and resampled output with no DC offset.
 
 `jvmTest` uses the real ROMs. It runs MOS 1.20 from its reset vector to its first
 I/O access, and checks that it reads the system VIA's interrupt enable register
@@ -467,7 +479,8 @@ also check that vertical sync runs at 50 Hz, and that BREAK is a warm start. On
 BREAK the MOS prints "BBC Computer" without the memory size, because the size
 and its beep come from separate strings that it prints only at power-on. Fitting
 start-up links 6-8 boots in MODE 0. BASIC is found in ROM 15 and its three
-aliases, and the I/O pages hide the MOS bytes beneath them.
+aliases, and the I/O pages hide the MOS bytes beneath them. MOS silences the
+sound chip at reset, and VDU 7 sounds a tone that stops again.
 
 The typing tests press keys in the matrix as the typist does. They type
 `10 REM` followed by every character the BBC can type and read the line back

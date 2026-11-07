@@ -78,7 +78,7 @@ class ChipsTest {
         assertEquals(3, sound.attenuation[0])
         sound.write(0xE0 or 0x04) // noise
         assertEquals(4, sound.noise)
-        assertEquals(15, sound.attenuation[3])
+        assertEquals(0, sound.attenuation[3], "full volume until written, as at power-on")
     }
 
     @Test

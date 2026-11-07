@@ -32,7 +32,7 @@ import kotlin.system.exitProcess
 
 /** The emulator window: the picture, the keyboard and the menus. */
 class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listener {
-    private val emulator = Emulator(roms::newMachine, this)
+    private val emulator = Emulator(roms::newMachine, options.sound, this)
     private val frame = JFrame()
     private val screen = ScreenPanel(emulator)
     private val isMac = System.getProperty("os.name").startsWith("Mac")
@@ -190,6 +190,11 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
             add(item("Power Cycle", null) {
                 resume()
                 emulator.powerCycle()
+            })
+            addSeparator()
+            add(JCheckBoxMenuItem("Sound", options.sound).apply {
+                isEnabled = options.sound
+                addActionListener { emulator.volume = if (isSelected) 1f else 0f }
             })
             if (!isMac) {
                 addSeparator()
