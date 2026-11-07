@@ -39,7 +39,8 @@ the ROM credits Sophie Wilson under her former name.
     Nigel Barnes;
   - the 6522 VIA (`6522via.cpp`), by Peter Trauner and Mathis Rosenhauer;
   - the 6845 CRTC (`mc6845.cpp`), by Wilbert Pol and Nigel Barnes;
-  - the 6850 ACIA (`6850acia.cpp`), by smf;
+  - the 6850 ACIA (`6850acia.cpp`), by smf: our receiver, transmitter and DCD
+    logic;
   - the SAA5050 teletext generator (`saa5050.cpp`), by Curt Coder and Nigel
     Barnes: our MODE 7 attributes, character rounding and mosaic graphics;
   - the SN76489 family (`sn76496.cpp`), by Nicola Salmoria: our tone and noise
@@ -50,6 +51,14 @@ the ROM credits Sophie Wilson under her former name.
   ROM images. Its table of cycle-stretched addresses confirmed BeebWiki's, and
   its 6845 helped us understand interlace sync and video mode. b2 is GPL-3.0,
   and none of its code is used here.
+
+## Tapes
+
+- **[The Stairway to Hell](https://www.stairwaytohell.com/)**: the UEF archive
+  our Welcome cassette images come from, through the
+  [beebstuff.uk](https://www.beebstuff.uk/f/acorn/STH-UEF/) mirror.
+- **Thomas Harte**: the UEF tape format they are stored in.
+- **Acorn**, who made the cassettes; see [`tapes/README.md`](tapes/README.md).
 
 ## The teletext font
 
