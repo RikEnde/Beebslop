@@ -560,7 +560,6 @@ class Fdc8271 : IoDevice {
 
         private const val ID_BYTES = 6 // four ID bytes and the CRC
         private const val CRC_BYTES = 2
-        
         private const val MAX_HEAD_TRACK = 83
         private const val STEP_UNIT_TICKS = 4000 // 2 ms, as in MAME
         private const val MIN_STEP_TICKS = 5

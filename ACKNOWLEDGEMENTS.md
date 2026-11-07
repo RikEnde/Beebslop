@@ -44,21 +44,34 @@ the ROM credits Sophie Wilson under her former name.
   - the SAA5050 teletext generator (`saa5050.cpp`), by Curt Coder and Nigel
     Barnes: our MODE 7 attributes, character rounding and mosaic graphics;
   - the SN76489 family (`sn76496.cpp`), by Nicola Salmoria: our tone and noise
-    generators, noise taps and volume steps.
+    generators, noise taps and volume steps;
+  - the Intel 8271 (`i8271.cpp`), by Carl and Olivier Galibert: our disc
+    controller's commands, results, special registers and error codes;
+  - the Acorn disc interface (`bbc/fdc/acorn.cpp`), by Nigel Barnes, and the
+    BBC's NMI wiring (`bbc_m.cpp`, by Gordon Jefferyes and Nigel Barnes): how
+    the 8271 is decoded and connected.
 
-  Its ROM hashes for `os12.rom` and `basic2.rom` confirmed our images.
+  Its ROM hashes for `os12.rom`, `basic2.rom` and `dnfs120.rom` confirmed our
+  images.
+- **[BeebEm](https://github.com/stardot/beebem-windows)**, by Dave Gilbert, Mike
+  Wyatt and contributors: the source of our DNFS ROM image. BeebEm is GPL, and
+  none of its code is used here.
+- **[b-em](https://github.com/stardot/b-em)**, by Tom Walker and contributors:
+  the source of our Welcome disc image. b-em is GPL, and none of its code is used
+  here.
 - **[b2](https://github.com/tom-seddon/b2)**, by Tom Seddon: the source of our
-  ROM images. Its table of cycle-stretched addresses confirmed BeebWiki's, and
+  MOS and BASIC images, and blank discs that confirmed ours. Its table of cycle-stretched addresses confirmed BeebWiki's, and
   its 6845 helped us understand interlace sync and video mode. b2 is GPL-3.0,
   and none of its code is used here.
 
-## Tapes
+## Tapes and discs
 
 - **[The Stairway to Hell](https://www.stairwaytohell.com/)**: the UEF archive
   our Welcome cassette images come from, through the
   [beebstuff.uk](https://www.beebstuff.uk/f/acorn/STH-UEF/) mirror.
 - **Thomas Harte**: the UEF tape format they are stored in.
-- **Acorn**, who made the cassettes; see [`tapes/README.md`](tapes/README.md).
+- **Acorn**, who made the cassettes and the Welcome disc; see
+  [`tapes/README.md`](tapes/README.md) and [`discs/README.md`](discs/README.md).
 
 ## The teletext font
 
