@@ -10,7 +10,7 @@ run the real ROMs.
 
 Early. MOS 1.20 boots to the BASIC prompt in a desktop window, draws the
 screen in every mode, takes keyboard input, plays sound, and loads and saves
-programs on cassette (UEF images); there is no disc yet.
+programs on cassette (UEF images) and disc (SSD and DSD images).
 
 | Part | State |
 |---|---|
@@ -21,7 +21,7 @@ programs on cassette (UEF images); there is no disc yet.
 | Keyboard: host mapping (physical and natural), paste as typing | Done |
 | Sound (SN76489) | Done |
 | Cassette (6850 ACIA, serial ULA, UEF) | Done |
-| Disc (8271, DFS, SSD/DSD) | Not started |
+| Disc (8271, DFS 1.20, SSD/DSD) | Done |
 | Econet (68B54 ADLC), networking several instances | Not started |
 
 The first target is a Model B with MOS 1.20 and BASIC II, booting to the BASIC
@@ -46,7 +46,7 @@ Each step ends with a headless test on the real ROMs.
 7. **Cassette:** the 6850 ACIA, serial ULA and UEF images, with fast loading.
    Done.
 8. **Disc:** the Intel 8271, as fitted to the original Model B, with Acorn DFS
-   and SSD/DSD images. We still need a DFS 0.90 or 1.20 dump for the 8271.
+   1.20 and SSD/DSD images. Done.
 9. **Econet:** the 68B54 ADLC and station ID, so that **several running instances
    of Beebslop can form one Econet network**. The core models only the ADLC and
    exchanges whole frames through an interface. The desktop carries the frames
@@ -90,6 +90,7 @@ marked `CC0-1.0 AND LicenseRef-CDPA-s55`; see
 ./run.sh --scale 2                 # a 1408 x 1056 window
 ./run.sh --screenshot boot.png     # no window: boot, save a PNG, exit
 ./run.sh --tape tapes/welcome-english.uef --type 'CHAIN ""\n'   # load and run from tape
+./run.sh --disc discs/welcome.ssd --boot                         # boot a disc
 ./run.sh --help
 ```
 
@@ -99,11 +100,15 @@ ROMs are read from `roms/`, or from `--roms DIR`.
 
 | Option | Meaning |
 |---|---|
-| `--roms DIR` | Directory with `os.rom` and `basic.rom` (default: `roms`) |
+| `--roms DIR` | Directory with `os.rom`, `basic.rom` and `dnfs.rom` (default: `roms`) |
 | `--scale 1\|2` | Window size; 1 is 704 x 528 (default: 1) |
 | `--screenshot FILE` | Run without a window, save a PNG of the picture, then exit |
 | `--frames N` | 50ths of a second to run before the screenshot (default: 150) |
 | `--tape FILE` | Put a UEF cassette image in the recorder |
+| `--disc FILE` | Put an SSD or DSD disc image in drive 0 |
+| `--disc1 FILE` | Put an SSD or DSD disc image in drive 1 |
+| `--boot` | Press SHIFT+BREAK at power-on, to boot the disc in drive 0 |
+| `--no-dfs` | Leave out the disc interface, even if `dnfs.rom` is there |
 | `--type TEXT` | Type TEXT after boot; `\n` starts a new line |
 | `--no-sound` | Run without sound |
 | `--log-keys` | Print each host key event and the BBC key it maps to |
@@ -111,6 +116,7 @@ ROMs are read from `roms/`, or from `--roms DIR`.
 The window shows the picture and runs in real time. **Machine** has Pause
 (Cmd+P, or Ctrl+Shift+P off macOS), Power Cycle and a Sound switch; **Edit** has Paste as Typing;
 **Tape** inserts, rewinds, ejects and saves cassettes, and turns on Fast Loading;
+**Disc** inserts, ejects, write-protects and saves the discs in drives 0 and 1;
 **Keys** has BREAK and its variants, keys a host keyboard lacks, f0-f9 and the
 keyboard layout; **View** sets the size; **Help > Keyboard** lists the keys.
 
@@ -161,6 +167,27 @@ Micro, in English and German, as UEF images from the
 [Stairway to Hell](https://www.stairwaytohell.com/) archive. They are © Acorn and
 not covered by Beebslop's licence. [tapes/README.md](tapes/README.md) lists
 what's on each one and where it came from.
+
+### Discs
+
+With `dnfs.rom` in `roms/`, the machine has Acorn's disc interface and boots with
+DFS: the banner says `Acorn DFS`, and PAGE is `&1900` instead of `&0E00`.
+**Disc > Drive 0 > Insert Disc...** (or Drive 1) puts an SSD or DSD image in a
+drive. SHIFT+BREAK boots the disc in drive 0, `*CAT` lists it, and
+`CHAIN "NAME"` runs a BASIC program. A disc has no "next file", so `CHAIN ""`
+only works on tape. A double-sided disc's second side is drive 2 (drive 1's is
+drive 3).
+
+Changes go back to the image file: when the drives stop, about two seconds after
+the last access, and when the disc is ejected or the window closes. A file you
+can't write to is inserted write-protected, and **Write Protect** makes DFS
+refuse to write with `Disk read only`. **New Blank Disc** makes a formatted, empty
+disc in memory; **Save Disc As...** writes it to a file, which then gets its
+changes. The title bar shows each drive's disc and `[DISC]` while the drives run.
+
+[`discs/`](discs/README.md) holds the Welcome disc, with FORM40, FORM80 and
+VERIFY, and blank formatted discs. [discs/README.md](discs/README.md) says where
+each came from.
 
 ## Platform independence
 
@@ -339,6 +366,8 @@ The production code is in `bbc/src/commonMain/kotlin/beebslop/bbc`.
 | `Acia6850.kt` | The 6850 ACIA: receiver, transmitter, DCD and interrupts |
 | `SerialUla.kt` | The serial ULA: cassette cells, motor relay and baud clocks |
 | `Tape.kt` | A cassette: playing, recording, and reading and writing UEF images |
+| `Disc.kt` | A floppy disc as tracks of sectors with ID fields, and SSD/DSD images |
+| `Fdc8271.kt` | The 8271 disc controller and its two drives, with rotation timing |
 
 ### Memory map
 
@@ -360,7 +389,7 @@ The production code is in `bbc/src/commonMain/kotlin/beebslop/bbc`.
 | `&30-&3F` | ROMSEL | 2 MHz | Yes |
 | `&40-&5F` | System VIA | 1 MHz | Yes, without the shift register |
 | `&60-&7F` | User VIA | 1 MHz | Yes, with nothing on its ports |
-| `&80-&9F` | 8271 disc controller | 2 MHz | No; reads `&FF` |
+| `&80-&9F` | 8271 disc controller | 2 MHz | With `dnfs.rom`; otherwise reads `&FF` |
 | `&A0-&BF` | 68B54 ADLC (Econet) | 2 MHz | No |
 | `&C0-&DF` | uPD7002 ADC | 1 MHz | No |
 | `&E0-&FF` | Tube | 2 MHz | No |
@@ -369,8 +398,8 @@ The address ranges are from the *Advanced User Guide*, chapter 17. The list of
 1 MHz devices is from
 [BeebWiki: Cycle stretching](https://beebwiki.mdfs.net/Cycle_stretching). SHEILA
 addresses with no device attached read `&FE`, and the empty disc controller slot
-reads `&FF`, as in MAME. Real hardware leaves the data bus floating, and emulators
-differ: b2 returns 0.
+reads `&FF` when no disc interface is fitted, as in MAME. Real hardware leaves
+the data bus floating, and emulators differ: b2 returns 0.
 
 **Paged ROMs.** The board has four sockets, which the *Advanced User Guide*
 numbers as ROMs 12-15 (chapter 21). ROMSEL is write-only, and without an
@@ -444,6 +473,25 @@ The wiring follows MAME's `bbcb.cpp` and the *Advanced User Guide*, chapter 23.
   cassette interrupt routine (`&F588`) relies on that gap, and waiting bytes go
   back to back without an extra clock, which would otherwise drift against the
   tape cells.
+- **Disc.** The Acorn disc interface puts the 8271 at `&FE80` (status and
+  command at offset 0, result and parameter at 1, reset at 2, data at 4, as in
+  MAME's `bbc/fdc/acorn.cpp`), DNFS in ROM 14, and the 8271's INT on the
+  6502's NMI. DFS runs the 8271 in non-DMA mode, so INT also rises for each data
+  byte, and DFS's NMI handler at `&0D00` moves it. Commands, results and special
+  registers follow MAME's `i8271.cpp`, but the disc is modelled sector by sector
+  rather than as flux. It turns at 300 rpm (400,000 ticks), a byte passes the
+  head every 64 µs (128 ticks), a sector is found where it lies on its track, a
+  step takes 2 ms per unit of the step rate, and a missing sector is reported at
+  the second index hole. A byte the CPU doesn't take within 64 µs ends the
+  command with a late-DMA error (`&0A`). The head unloads, stopping the motors,
+  after the number of idle turns DFS specifies (12). Format Track takes the ID
+  fields from the CPU, so discs formatted by FORM40 and FORM80 have the IDs and
+  gaps those programs ask for. Three differences from the hardware: on the real
+  board both READY inputs follow the head-load line, but here an empty drive is
+  never ready, so DFS waits for ESCAPE instead of searching forever;
+  deleted-data marks, CRC errors and the Scan commands aren't modelled; and the
+  TRK0 and WR PROT bits of Read Drive Status (bits 1 and 3) are from memory of
+  the datasheet, not checked, because DFS only reads the ready bit.
 
 ### Video
 
@@ -503,6 +551,12 @@ the middle of a frame appear where they happen. The rendering follows MAME's
   over and past the end, and writing a UEF image that reads back the same.
 - The sound chip: tone pitch, period 0, the attenuation steps, periodic and
   white noise, and resampled output with no DC offset.
+- Discs: the SSD and DSD layouts, padding a short image to its catalogue size,
+  writing an image back unchanged, and blank discs. The 8271 through its
+  registers: drive status, seek timing, reading sectors within a turn, the
+  late-DMA error, sector not found at the second index hole, an empty drive,
+  writing and write protection, formatting a track and reading its IDs, side
+  select, and unloading the head after the idle count.
 
 `jvmTest` uses the real ROMs. It runs MOS 1.20 from its reset vector to its first
 I/O access, and checks that it reads the system VIA's interrupt enable register
@@ -533,6 +587,16 @@ shows the program. A tape with one cell flipped near the end of the block gives
 `Data?`. `TapeLoadTest` loads INTRO from both Welcome cassettes in `tapes/` and
 compares RAM with the file on the tape. On the desktop, Fast Loading loads the same tape at more than 3 times
 real time.
+
+The disc tests run DFS 1.20 from `dnfs.rom`. It boots with `Acorn DFS` and
+PAGE at `&1900`; `*CAT` lists the Welcome disc, and SHIFT+BREAK boots it to its
+welcome message. A program saved to a blank disc goes through an SSD image and
+back, then loads and lists on a fresh machine, with `*INFO` showing its
+addresses and length; a save to `:2` lands on the second side. Acorn's FORM40,
+from the Welcome disc, formats an unformatted disc in drive 1, and VERIFY reads
+it all back. A write-protected disc gives `Disk read only`, and `*CAT` of an
+empty drive waits until ESCAPE. On the desktop, a disc inserted from a file is
+saved back to it when the drive stops after a `SAVE`.
 
 The typing tests press keys in the matrix as the typist does. They type
 `10 REM` followed by every character the BBC can type and read the line back
@@ -567,15 +631,19 @@ See [`ACKNOWLEDGEMENTS.md`](ACKNOWLEDGEMENTS.md).
 
 ## ROMs
 
-`roms/` holds the two ROMs the Model B needs. They are copyright Acorn Computers
-Ltd and are included without a licence; see
+`roms/` holds the two ROMs the Model B needs, and the disc filing system. They
+are copyright Acorn Computers Ltd and are included without a licence; see
 [`LICENSES/LicenseRef-Acorn-ROM.txt`](LICENSES/LicenseRef-Acorn-ROM.txt).
 
 | File | Contents | SHA-1 | Matches |
 |---|---|---|---|
 | `roms/os.rom` | MOS 1.20, 16 KiB | `0d9bcaf6a393c9ce2359ed700ddb53c232c2c45d` | MAME `os12.rom` (CRC `3c14fc70`) |
 | `roms/basic.rom` | BBC BASIC II, 16 KiB | `4a7393f3a45ea309f744441c16723e2ef447a281` | MAME `basic2.rom` (CRC `79434781`) |
+| `roms/dnfs.rom` | DNFS: DFS 1.20 and NFS 3.60, 16 KiB | `7e3c536baeae84d6498a14e8405319e01ee78232` | MAME `dnfs120.rom` (CRC `8ccd2157`) |
 
-Both were taken from [b2](https://github.com/tom-seddon/b2)'s `etc/roms/`
-(`OS12.ROM`, `BASIC2.ROM`). The BASIC image is byte-identical to Elkslop's,
+The first two were taken from [b2](https://github.com/tom-seddon/b2)'s
+`etc/roms/` (`OS12.ROM`, `BASIC2.ROM`). `dnfs.rom` is
+[BeebEm](https://github.com/stardot/beebem-windows)'s
+`UserData/BeebFile/BBC/DNFS.rom`; b2 has no DFS for the 8271. DNFS is the ROM
+most disc-equipped Model Bs had. Its NFS half will serve Econet. The BASIC image is byte-identical to Elkslop's,
 because the Electron runs the same BASIC II.

@@ -17,9 +17,21 @@ SPDX-FileCopyrightText = "2026 The Beebslop contributors"
 SPDX-License-Identifier = "BSD-3-Clause"
 
 [[annotations]]
-path = ["roms/os.rom", "roms/basic.rom"]
+path = ["roms/os.rom", "roms/basic.rom", "roms/dnfs.rom"]
 precedence = "override"
 SPDX-FileCopyrightText = "1981-1982 Acorn Computers Ltd"
+SPDX-License-Identifier = "LicenseRef-Acorn-ROM"
+
+[[annotations]]
+path = ["discs/blank-*.ssd", "discs/blank-*.dsd"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 The Beebslop contributors"
+SPDX-License-Identifier = "BSD-3-Clause"
+
+[[annotations]]
+path = ["discs/welcome.ssd"]
+precedence = "override"
+SPDX-FileCopyrightText = "Acorn Computers Ltd"
 SPDX-License-Identifier = "LicenseRef-Acorn-ROM"
 
 [[annotations]]

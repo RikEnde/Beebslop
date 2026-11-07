@@ -12,12 +12,14 @@ UefTape.kt and UlaCassette.kt), desktop/.../TapeFile.kt, desktop/.../KeyMapping.
 desktop/.../NaturalKeyboard.kt, desktop/.../AudioOutput.kt and
 desktop/.../AppIcon.kt (the drawing code; the owl is new).
 
-The BBC Microcomputer ROM images (roms/os.rom, roms/basic.rom) are copyright
+The BBC Microcomputer ROM images (roms/os.rom, roms/basic.rom, roms/dnfs.rom) are copyright
 Acorn Computers Ltd and are included without a licence; they are not covered by
 the BSD License. See LICENSES/LicenseRef-Acorn-ROM.txt.
 
-The cassette images (tapes/*.uef) are copyright Acorn Computers Ltd and are
-included on the same terms. See tapes/README.md.
+The cassette images (tapes/*.uef) and the Welcome disc image
+(discs/welcome.ssd) are copyright Acorn Computers Ltd and are included on the
+same terms. See tapes/README.md and discs/README.md. The blank disc images
+(discs/blank-*) are made by Beebslop, under its BSD 3-Clause License.
 
 bbc/src/jvmTest/.../TapeLoadTest.kt is adapted from Elkslop's TapeLoadTest.kt,
 under the same BSD 3-Clause License.
@@ -50,6 +52,11 @@ commit e1c41b59c0027df7290229f6008393e5ab72013c), which use the same BSD
     copyright-holders: Curt Coder, Nigel Barnes
   Video.kt, VideoUla.kt: src/mame/acorn/bbc_v.cpp
     copyright-holders: Gordon Jefferyes, Nigel Barnes
+  Fdc8271.kt: src/devices/machine/i8271.cpp
+    copyright-holders: Carl, Olivier Galibert
+  Fdc8271.kt, BbcMachine.kt: src/devices/bus/bbc/fdc/acorn.cpp,
+    src/mame/acorn/bbc_m.cpp
+    copyright-holders: Nigel Barnes; Gordon Jefferyes, Nigel Barnes
 
   license: BSD-3-Clause
 
