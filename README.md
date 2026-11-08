@@ -6,83 +6,6 @@ It is built the same way as its sibling
 platform-free emulation core, a Swing desktop front end, and headless tests that
 run the real ROMs.
 
-## Status
-
-Early. MOS 1.20 boots to the BASIC prompt in a desktop window, draws the
-screen in every mode, takes keyboard input, plays sound, and loads and saves
-programs on cassette (UEF images) and disc (SSD and DSD images).
-
-| Part | State |
-|---|---|
-| NMOS 6502 (`cpu`) | Done: copied from Elkslop, all tests pass |
-| Memory map, SHEILA, 1 MHz cycle stretching | Done |
-| System VIA, CRTC, video ULA; boot to the BASIC prompt | Done |
-| MODE 7 (SAA5050 teletext), then modes 0-6 | Done |
-| Keyboard: host mapping (physical and natural), paste as typing | Done |
-| Sound (SN76489) | Done |
-| Cassette (6850 ACIA, serial ULA, UEF) | Done |
-| Disc (8271, DFS 1.20, SSD/DSD) | Done |
-| Econet (68B54 ADLC), networking several instances | Not started |
-
-The first target is a Model B with MOS 1.20 and BASIC II, booting to the BASIC
-prompt in MODE 7.
-
-## Plan
-
-Each step ends with a headless test on the real ROMs.
-
-1. **Skeleton:** Gradle, the `cpu` module and licensing. Done.
-2. **Memory map:** RAM, the OS ROM, ROMSEL and the sideways ROM slots with BASIC
-   fitted, and SHEILA decoding with 1 MHz cycle stretching built into the clock.
-   Done.
-3. **Boot:** the system VIA, CRTC, video ULA and keyboard links, enough for MOS
-   1.20 to reach the BASIC prompt. The test reads the banner and `>` from MODE 7
-   screen memory. Done.
-4. **Video:** MODE 7 first, then modes 0-6 with the palette and scroll wrap.
-   Done.
-5. **Keyboard:** the matrix, autoscan, host mapping (physical and natural) and a
-   typist. Done.
-6. **Sound:** the SN76489. Done.
-7. **Cassette:** the 6850 ACIA, serial ULA and UEF images, with fast loading.
-   Done.
-8. **Disc:** the Intel 8271, as fitted to the original Model B, with Acorn DFS
-   1.20 and SSD/DSD images. Done.
-9. **Econet:** the 68B54 ADLC and station ID, so that **several running instances
-   of Beebslop can form one Econet network**. The core models only the ADLC and
-   exchanges whole frames through an interface. The desktop carries the frames
-   between instances over the host network. Things to settle when we get there:
-   - the transport, for example UDP on the local host or LAN, and whether to
-     follow an existing convention such as AUN so that other emulators can join;
-   - how station numbers are set for each instance;
-   - the network clock, which a real network gets from a separate clock box;
-   - a file server: another instance running file server software, or one on the
-     host.
-10. **Accuracy:** exact VIA timers, per-line video effects, and the games in
-    MAME's compatibility list.
-
-### Teletext font
-
-The SAA5050's character shapes come from Ben Harris's
-[Bedstead](https://bjh21.me.uk/bedstead/). `TeletextFont.kt` was generated
-from `bedstead.c` in Bedstead 3.261, whose SHA-256 is in its header. It holds
-the 5×9 bitmaps for codes `&20-&7F` of the English
-SAA5050. Character rounding is done in `Saa5050.kt`.
-
-Bedstead has no table of the English character set, so the script builds it:
-Bedstead's US ASCII (SAA5055) table, with the eleven glyphs it lists as "Extra
-characters found in the English (SAA5050) character set" at `&23` (£), `&27`,
-`&5B-&5E` (← ½ → ↑), `&60` (—) and `&7B-&7E` (¼ ‖ ¾ ÷), and `#` moved to `&5F`.
-The *Advanced User Guide* confirms three of these: the MOS stores `#` as `&5F`,
-`_` as `&60` and `£` as `&23` in MODE 7 screen memory (section 11, the table at
-`&C4B6`). Bedstead's metrics (a 10-row cell, ascent 8, cap height 7) put the 9
-glyph rows below one blank row.
-
-Bedstead's code and new glyphs are dedicated to the public domain (CC0). The
-original SAA5050 designs are covered by its authors' reading of CDPA 1988 s.55,
-which Debian considers too narrow to make the package free. `TeletextFont.kt` is
-marked `CC0-1.0 AND LicenseRef-CDPA-s55`; see
-[`LICENSES/LicenseRef-CDPA-s55.txt`](LICENSES/LicenseRef-CDPA-s55.txt).
-
 ## Run it
 
 ```sh
@@ -530,6 +453,29 @@ the middle of a frame appear where they happen. The rendering follows MAME's
 - **Not yet emulated:** the extra half line of an interlaced field; teletext
   boxing, which the BBC doesn't use.
 
+### Teletext font
+
+The SAA5050's character shapes come from Ben Harris's
+[Bedstead](https://bjh21.me.uk/bedstead/). `TeletextFont.kt` was generated
+from `bedstead.c` in Bedstead 3.261, whose SHA-256 is in its header. It holds
+the 5×9 bitmaps for codes `&20-&7F` of the English
+SAA5050. Character rounding is done in `Saa5050.kt`.
+
+Bedstead has no table of the English character set, so it was built from
+Bedstead's US ASCII (SAA5055) table, with the eleven glyphs it lists as "Extra
+characters found in the English (SAA5050) character set" at `&23` (£), `&27`,
+`&5B-&5E` (← ½ → ↑), `&60` (—) and `&7B-&7E` (¼ ‖ ¾ ÷), and `#` moved to `&5F`.
+The *Advanced User Guide* confirms three of these: the MOS stores `#` as `&5F`,
+`_` as `&60` and `£` as `&23` in MODE 7 screen memory (section 11, the table at
+`&C4B6`). Bedstead's metrics (a 10-row cell, ascent 8, cap height 7) put the 9
+glyph rows below one blank row.
+
+Bedstead's code and new glyphs are dedicated to the public domain (CC0). The
+original SAA5050 designs are covered by its authors' reading of CDPA 1988 s.55,
+which Debian considers too narrow to make the package free. `TeletextFont.kt` is
+marked `CC0-1.0 AND LicenseRef-CDPA-s55`; see
+[`LICENSES/LicenseRef-CDPA-s55.txt`](LICENSES/LicenseRef-CDPA-s55.txt).
+
 ### Verification
 
 `commonTest` checks:
@@ -645,5 +591,6 @@ The first two were taken from [b2](https://github.com/tom-seddon/b2)'s
 `etc/roms/` (`OS12.ROM`, `BASIC2.ROM`). `dnfs.rom` is
 [BeebEm](https://github.com/stardot/beebem-windows)'s
 `UserData/BeebFile/BBC/DNFS.rom`; b2 has no DFS for the 8271. DNFS is the ROM
-most disc-equipped Model Bs had. Its NFS half will serve Econet. The BASIC image is byte-identical to Elkslop's,
+most disc-equipped Model Bs had. Its NFS half finds no Econet hardware, and
+stays quiet. The BASIC image is byte-identical to Elkslop's,
 because the Electron runs the same BASIC II.
