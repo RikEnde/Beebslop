@@ -388,7 +388,7 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
 
     private fun chooseTape() {
         val dialog = FileDialog(frame, "Insert Tape", FileDialog.LOAD)
-        dialog.directory = File("tapes").absolutePath
+        dialog.directory = defaultTapeDirectory().path
         dialog.isVisible = true
         val name = dialog.file
         if (name != null) insertTape(File(dialog.directory, name))
@@ -407,7 +407,7 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
 
     private fun chooseDisc(drive: Int) {
         val dialog = FileDialog(frame, "Insert Disc in Drive $drive", FileDialog.LOAD)
-        dialog.directory = File("discs").absolutePath
+        dialog.directory = defaultDiscDirectory().path
         dialog.isVisible = true
         val name = dialog.file
         if (name != null) insertDisc(drive, File(dialog.directory, name))
@@ -417,7 +417,8 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
     private fun insertDisc(drive: Int, file: File) {
         try {
             val disc = DiscFile.load(file)
-            emulator.insertDisc(drive, disc, file)
+            // A disc inside the app keeps its changes in memory until Save Disc As.
+            emulator.insertDisc(drive, disc, file.takeUnless(::isBundled))
             discNames[drive] = file.name
             writeProtectItems[drive].isSelected = disc.writeProtected
             updateTitle()
@@ -436,7 +437,7 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
     /** Writes the disc to a file, which then keeps receiving its changes. */
     private fun saveDisc(drive: Int) {
         val dialog = FileDialog(frame, "Save Drive $drive's Disc As", FileDialog.SAVE)
-        dialog.directory = File("discs").absolutePath
+        dialog.directory = saveDirectory(defaultDiscDirectory()).path
         dialog.file = discNames[drive]?.takeIf { it.endsWith(".ssd") || it.endsWith(".dsd") } ?: "disc.ssd"
         dialog.isVisible = true
         val name = dialog.file
@@ -445,6 +446,11 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
             return
         }
         val chosen = File(dialog.directory, name)
+        if (isBundled(chosen)) {
+            JOptionPane.showMessageDialog(frame, "Discs can't be saved inside the app. Choose another folder.", "Save Disc", JOptionPane.ERROR_MESSAGE)
+            screen.requestFocusInWindow()
+            return
+        }
         emulator.saveDiscAs(drive, chosen) { error ->
             SwingUtilities.invokeLater {
                 if (error != null) {
@@ -461,7 +467,7 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
     /** Writes the cassette, with anything recorded on it, to a UEF file. */
     private fun saveTape() {
         val dialog = FileDialog(frame, "Save Tape As", FileDialog.SAVE)
-        dialog.directory = File("tapes").absolutePath
+        dialog.directory = saveDirectory(defaultTapeDirectory()).path
         dialog.file = tapeName?.takeIf { it.endsWith(".uef") } ?: "tape.uef"
         dialog.isVisible = true
         val name = dialog.file

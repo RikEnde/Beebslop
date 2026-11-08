@@ -19,11 +19,13 @@ run the real ROMs.
 
 `run.sh` builds the desktop jar with Gradle if needed, then runs it. It needs a
 JDK 17 or newer: `$JAVA_HOME`, else `.tools/jdk`, else `java` on the `PATH`. The
-ROMs are read from `roms/`, or from `--roms DIR`.
+ROMs are built into the jar, so `desktop/build/libs/beebslop.jar` runs from any
+directory without `--roms`; `--roms DIR` reads them from a directory instead.
+To run without Gradle or Java installed, see [Standalone app](#standalone-app).
 
 | Option | Meaning |
 |---|---|
-| `--roms DIR` | Directory with `os.rom`, `basic.rom` and `dnfs.rom` (default: `roms`) |
+| `--roms DIR` | Directory with `os.rom`, `basic.rom` and `dnfs.rom` (default: built in) |
 | `--scale 1\|2` | Window size; 1 is 704 x 528 (default: 1) |
 | `--screenshot FILE` | Run without a window, save a PNG of the picture, then exit |
 | `--frames N` | 50ths of a second to run before the screenshot (default: 150) |
@@ -93,7 +95,7 @@ what's on each one and where it came from.
 
 ### Discs
 
-With `dnfs.rom` in `roms/`, the machine has Acorn's disc interface and boots with
+With `dnfs.rom` (built in, or in the `--roms` directory), the machine has Acorn's disc interface and boots with
 DFS: the banner says `Acorn DFS`, and PAGE is `&1900` instead of `&0E00`.
 **Disc > Drive 0 > Insert Disc...** (or Drive 1) puts an SSD or DSD image in a
 drive. SHIFT+BREAK boots the disc in drive 0, `*CAT` lists it, and
@@ -111,6 +113,26 @@ changes. The title bar shows each drive's disc and `[DISC]` while the drives run
 [`discs/`](discs/README.md) holds the Welcome disc, with FORM40, FORM80 and
 VERIFY, and blank formatted discs. [discs/README.md](discs/README.md) says where
 each came from.
+
+### Standalone app
+
+```sh
+./gradlew :desktop:packageApp    # desktop/build/jpackage/app-image/Beebslop.app
+./gradlew :desktop:packageDmg    # desktop/build/jpackage/dmg/Beebslop-1.0.0.dmg
+```
+
+These build an app that needs neither Gradle nor Java: jpackage bundles a
+trimmed Java runtime, so it is about 80 MB. It contains the ROMs, the tapes in
+`tapes/` and the discs in `discs/`, and **Insert Tape** and **Insert Disc** open
+on those. Discs from inside the app are never written back to: their changes stay
+in memory until **Save Disc As...**, which opens in `~/Documents`. Writing inside
+the app would break its signature, and fails anyway in `/Applications`.
+
+jpackage only builds for the OS it runs on, so `packageDmg` works on macOS only;
+on Windows and Linux, `packageApp` makes an app folder with the same contents.
+It needs a JDK 17 or newer. The app is unsigned (jpackage signs it ad hoc), so
+on first launch macOS refuses to open it by double-click: right-click it, choose
+**Open**, then **Open** again.
 
 ## Platform independence
 
@@ -577,8 +599,8 @@ See [`ACKNOWLEDGEMENTS.md`](ACKNOWLEDGEMENTS.md).
 
 ## ROMs
 
-`roms/` holds the two ROMs the Model B needs, and the disc filing system. They
-are copyright Acorn Computers Ltd and are included without a licence; see
+`roms/` holds the two ROMs the Model B needs, and the disc filing system. The
+desktop build copies them into its jar and app. They are copyright Acorn Computers Ltd and are included without a licence; see
 [`LICENSES/LicenseRef-Acorn-ROM.txt`](LICENSES/LicenseRef-Acorn-ROM.txt).
 
 | File | Contents | SHA-1 | Matches |

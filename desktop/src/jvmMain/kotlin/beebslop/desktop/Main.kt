@@ -23,7 +23,7 @@ const val BOOT_FRAMES = 100
 const val SHIFT_BREAK_FRAMES = 25
 
 const val USAGE = """Usage: beebslop [options]
-  --roms DIR          Directory with os.rom, basic.rom and dnfs.rom (default: roms)
+  --roms DIR          Directory with os.rom, basic.rom and dnfs.rom (default: built in)
   --scale 1|2         Window size; 1 is 704 x 528 (default: 1)
   --screenshot FILE   Run without a window, save a PNG of the picture, then exit
   --frames N          50ths of a second to run before the screenshot (default: 150)
@@ -37,7 +37,8 @@ const val USAGE = """Usage: beebslop [options]
   --log-keys          Print each host key event and the BBC key it maps to"""
 
 data class Options(
-    val romDirectory: File = File("roms"),
+    /** Null means the ROMs built into the jar. */
+    val romDirectory: File? = null,
     val scale: Int = 1,
     val screenshot: File? = null,
     val screenshotFrames: Int = 150,
@@ -84,28 +85,77 @@ data class Options(
 }
 
 /**
- * The ROMs, from roms/ by default (© Acorn): the two a standard Model B needs,
- * and the disc filing system, which fits the disc interface if present.
+ * The ROMs (© Acorn): the two a standard Model B needs, and the disc filing
+ * system, which fits the disc interface if present. The build copies
+ * roms/os.rom, roms/basic.rom and roms/dnfs.rom into the jar, so it runs from
+ * anywhere; --roms DIR reads them from a directory instead.
  */
 class Roms(val os: ByteArray, val basic: ByteArray, val dfs: ByteArray?) {
     fun newMachine() = BbcMachine(os, basic, dfs)
 
     companion object {
         const val DFS = "dnfs.rom"
+        private const val RESOURCES = "/beebslop/roms/"
 
-        /** Loads the ROMs; without [dfs], or without dnfs.rom, there is no disc interface. */
-        fun load(directory: File, dfs: Boolean = true): Roms {
+        /**
+         * Loads the ROMs from [directory], or the built-in ones if it is null.
+         * Without [dfs], or without dnfs.rom, there is no disc interface.
+         */
+        fun load(directory: File?, dfs: Boolean = true): Roms {
+            fun builtIn(name: String) = Roms::class.java.getResourceAsStream(RESOURCES + name)
             fun read(name: String): ByteArray {
-                val file = File(directory, name)
-                if (!file.isFile) throw IOException("Missing ${file.absolutePath}")
-                val bytes = file.readBytes()
-                if (bytes.size != 0x4000) throw IOException("${file.absolutePath} must be 16 KiB, was ${bytes.size} bytes")
+                val (where, bytes) = if (directory == null) {
+                    val stream = builtIn(name) ?: throw IOException("The built-in $name is missing from the jar")
+                    "Built-in $name" to stream.use { it.readBytes() }
+                } else {
+                    val file = File(directory, name)
+                    if (!file.isFile) throw IOException("Missing ${file.absolutePath}")
+                    file.absolutePath to file.readBytes()
+                }
+                if (bytes.size != 0x4000) throw IOException("$where must be 16 KiB, was ${bytes.size} bytes")
                 return bytes
             }
-            val disc = if (dfs && File(directory, DFS).isFile) read(DFS) else null
+            val hasDfs = if (directory == null) builtIn(DFS)?.use { true } == true else File(directory, DFS).isFile
+            val disc = if (dfs && hasDfs) read(DFS) else null
             return Roms(read("os.rom"), read("basic.rom"), disc)
         }
     }
+}
+
+/** The directory the running jar is in; in the packaged app, Beebslop.app/Contents/app. */
+fun jarDirectory(): File? =
+    runCatching { File(Roms::class.java.protectionDomain.codeSource.location.toURI()).parentFile }.getOrNull()
+
+/** [name] in the current directory if it is there, else [name] beside the jar, where the packaged app keeps its media. */
+private fun mediaDirectory(name: String): File {
+    val here = File(name)
+    if (here.isDirectory) return here.absoluteFile
+    val beside = jarDirectory()?.let { File(it, name) }
+    return if (beside?.isDirectory == true) beside else here.absoluteFile
+}
+
+/** Where Insert Tape starts browsing. */
+fun defaultTapeDirectory(): File = mediaDirectory("tapes")
+
+/** Where Insert Disc starts browsing. */
+fun defaultDiscDirectory(): File = mediaDirectory("discs")
+
+/** Where Save As starts: [directory], unless it is inside the app; then ~/Documents, or home. */
+fun saveDirectory(directory: File): File {
+    if (!isBundled(directory)) return directory
+    val home = File(System.getProperty("user.home"))
+    return File(home, "Documents").takeIf { it.isDirectory } ?: home
+}
+
+/**
+ * True if [file] is inside the jar's directory, which only holds media in the
+ * packaged app. Writing to a disc there would change the signed bundle (macOS
+ * then calls the app damaged), and fails anyway in /Applications, so such
+ * discs are inserted without a backing file.
+ */
+fun isBundled(file: File): Boolean {
+    val app = jarDirectory()?.canonicalFile ?: return false
+    return generateSequence(file.canonicalFile) { it.parentFile }.any { it == app }
 }
 
 /**
@@ -147,8 +197,13 @@ fun main(args: Array<String>) {
     val roms = try {
         Roms.load(options.romDirectory, options.dfs)
     } catch (e: IOException) {
-        val message = "${e.message}\n\nPut the BBC Micro os.rom (MOS 1.20) and basic.rom (BASIC II) in that directory, " +
-            "and dnfs.rom (DNFS 1.20) for discs, or pass --roms DIR."
+        val message = if (options.romDirectory == null) {
+            "${e.message}\n\nThis build is incomplete. Pass --roms DIR with the BBC Micro os.rom (MOS 1.20), " +
+                "basic.rom (BASIC II) and, for discs, dnfs.rom (DNFS 1.20)."
+        } else {
+            "${e.message}\n\nPut the BBC Micro os.rom (MOS 1.20) and basic.rom (BASIC II) in that directory, " +
+                "and dnfs.rom (DNFS 1.20) for discs, or leave out --roms to use the built-in ones."
+        }
         System.err.println(message)
         if (options.screenshot == null && !GraphicsEnvironment.isHeadless()) {
             JOptionPane.showMessageDialog(null, message, "Beebslop", JOptionPane.ERROR_MESSAGE)
@@ -156,7 +211,8 @@ fun main(args: Array<String>) {
         exitProcess(1)
     }
     if (roms.dfs == null && options.discs.any { it != null }) {
-        System.err.println("--disc needs the disc interface: put dnfs.rom in ${options.romDirectory.path}, and don't pass --no-dfs.")
+        val where = options.romDirectory?.let { "put dnfs.rom in ${it.path}" } ?: "this build has no dnfs.rom"
+        System.err.println("--disc needs the disc interface: $where, and don't pass --no-dfs.")
         exitProcess(2)
     }
     options.screenshot?.let {
