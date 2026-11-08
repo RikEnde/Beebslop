@@ -28,6 +28,9 @@ cp discs/blank-80.ssd my-disc.ssd
 ./run.sh --disc my-disc.ssd
 ```
 
+The standalone app never writes to the discs inside it; their changes stay in
+memory until **Save Disc As...**.
+
 Or choose **Disc > Drive 0 > New Blank Disc**, which makes one in memory, and
 **Save Disc As...** to keep it.
 
