@@ -22,7 +22,7 @@ import beebslop.cpu.Cpu6502
  * - With a disc filing system ROM, the Acorn disc interface is fitted: its
  *   8271 controller, and the ROM in socket 14. The 8271's INT is the 6502's NMI.
  *
- * The Econet controller, ADC and Tube are not yet emulated, and read as absent.
+ * The Econet controller, ADC and Tube are not emulated, and read as absent.
  */
 class BbcMachine(osRom: ByteArray, basicRom: ByteArray, dfsRom: ByteArray? = null) {
     val ram = ByteArray(0x8000)
