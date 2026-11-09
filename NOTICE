@@ -22,7 +22,10 @@ same terms. See tapes/README.md and discs/README.md. The blank disc images
 (discs/blank-*) are made by Beebslop, under its BSD 3-Clause License.
 
 bbc/src/jvmTest/.../TapeLoadTest.kt is adapted from Elkslop's TapeLoadTest.kt,
-under the same BSD 3-Clause License.
+desktop/.../IconExport.kt and desktop/src/jvmTest/.../DisassembleOptionsTest.kt
+from the Elkslop files of the same names, and the --disassemble and --origin
+options in desktop/.../Main.kt from Elkslop's, all under the same BSD 3-Clause
+License.
 
 ------------------------------------------------------------------------------
 MAME

@@ -4,6 +4,7 @@
 package beebslop.desktop
 
 import beebslop.bbc.BbcMachine
+import beebslop.cpu.Disassembler
 import beebslop.bbc.KeyboardMatrix.Key
 import beebslop.bbc.Typist
 import beebslop.bbc.Video
@@ -26,7 +27,11 @@ const val USAGE = """Usage: beebslop [options]
   --roms DIR          Directory with os.rom, basic.rom and dnfs.rom (default: built in)
   --scale 1|2         Window size; 1 is 704 x 528 (default: 1)
   --screenshot FILE   Run without a window, save a PNG of the picture, then exit
-  --frames N          50ths of a second to run before the screenshot (default: 150)
+  --disassemble A-B   Run without a window, then print the machine code from hex address
+                      A to B, as in --disassemble FFE3-FFF9; with --screenshot, the
+                      picture comes from the same run
+  --origin ADDR       Number the listing from hex ADDR, for code that is copied there to run
+  --frames N          50ths of a second to run before the screenshot or listing (default: 150)
   --tape FILE         Put a UEF cassette image in the recorder
   --disc FILE         Put an SSD or DSD disc image in drive 0
   --disc1 FILE        Put an SSD or DSD disc image in drive 1
@@ -41,7 +46,12 @@ data class Options(
     val romDirectory: File? = null,
     val scale: Int = 1,
     val screenshot: File? = null,
+    /** Frames to run before the screenshot or the listing. */
     val screenshotFrames: Int = 150,
+    /** Addresses to disassemble after running headless, or null. */
+    val disassemble: IntRange? = null,
+    /** Where the code in [disassemble] runs from, if it is copied there first; null for where it is. */
+    val origin: Int? = null,
     val logKeys: Boolean = false,
     val sound: Boolean = true,
     val tape: File? = null,
@@ -71,6 +81,9 @@ data class Options(
                     "--boot" -> options.copy(boot = true)
                     "--no-dfs" -> options.copy(dfs = false)
                     "--type" -> options.copy(typeText = value().replace("\\n", "\n"))
+                    "--disassemble" -> options.copy(disassemble = parseRange(value()))
+                    "--origin" -> options.copy(origin = address(value())
+                        ?: throw IllegalArgumentException("--origin needs a hex address, as in 0E00"))
                     "--help", "-h" -> {
                         println(USAGE)
                         exitProcess(0)
@@ -79,7 +92,26 @@ data class Options(
                 }
                 i++
             }
+            if (options.origin != null && options.disassemble == null) {
+                throw IllegalArgumentException("--origin only goes with --disassemble")
+            }
             return options
+        }
+
+        /** A hex address such as `FFEE`, `$FFEE`, `&FFEE` or `0xFFEE`, or null. */
+        private fun address(text: String): Int? =
+            text.trim().removePrefix("$").removePrefix("&").removePrefix("0x")
+                .toIntOrNull(16)?.takeIf { it in 0..0xFFFF }
+
+        /** `FFE3-FFF9`, or `$FFE3-$FFF9`, in hex; a single address gives one instruction. */
+        private fun parseRange(text: String): IntRange {
+            val parts = text.split("-")
+            val start = address(parts[0])
+            val end = if (parts.size == 2) address(parts[1]) else start.takeIf { parts.size == 1 }
+            if (start == null || end == null || end < start) {
+                throw IllegalArgumentException("--disassemble needs hex addresses START-END, as in FFE3-FFF9")
+            }
+            return start..end
         }
     }
 }
@@ -159,11 +191,12 @@ fun isBundled(file: File): Boolean {
 }
 
 /**
- * Runs [Options.screenshotFrames] frames (50ths of a second) as fast as possible,
- * with the tape, discs, boot and text from [options], and writes the picture to
- * [file]. Disc changes are not saved.
+ * Builds a machine and runs [Options.screenshotFrames] frames (50ths of a
+ * second) as fast as possible, with the tape, discs, boot and text from
+ * [options], and on until the text is typed. The tape plays only if the text
+ * starts it. Disc changes are not saved.
  */
-fun saveScreenshot(roms: Roms, options: Options, file: File) {
+fun runHeadless(roms: Roms, options: Options): BbcMachine {
     val machine = roms.newMachine()
     options.tape?.let { machine.serialUla.tape = TapeFile.load(it) }
     for ((drive, disc) in options.discs.withIndex()) {
@@ -172,10 +205,25 @@ fun saveScreenshot(roms: Roms, options: Options, file: File) {
     val typist = Typist()
     if (options.boot) typist.enqueueChord(listOf(Key.SHIFT), holdFrames = SHIFT_BREAK_FRAMES) { it.reset() }
     options.typeText?.let { typist.enqueue(it, delayFrames = BOOT_FRAMES) }
-    repeat(options.screenshotFrames) {
+    var frames = 0
+    while (frames < options.screenshotFrames || typist.busy) {
         typist.onFrame(machine)
         Emulator.runFrame(machine)
+        frames++
     }
+    return machine
+}
+
+/**
+ * A listing of [range] as the CPU sees memory after [runHeadless]: RAM, the
+ * paged ROM or the OS, as the paging is then. Reading for it changes nothing.
+ * The listing numbers the code from [origin], where it will run once copied.
+ */
+fun disassemble(machine: BbcMachine, range: IntRange, origin: Int = range.first): String =
+    Disassembler(machine.bus::peek).listing(range.first, range.last, origin)
+
+/** Writes [machine]'s picture to [file] as a PNG, as the window shows it at scale 1. */
+fun saveScreenshot(machine: BbcMachine, file: File) {
     val view = ScreenPanel.VIEW
     val image = BufferedImage(view.width, view.height, BufferedImage.TYPE_INT_RGB)
     image.setRGB(0, 0, view.width, view.height, machine.video.pixels, view.y * Video.WIDTH + view.x, Video.WIDTH)
@@ -205,7 +253,7 @@ fun main(args: Array<String>) {
                 "and dnfs.rom (DNFS 1.20) for discs, or leave out --roms to use the built-in ones."
         }
         System.err.println(message)
-        if (options.screenshot == null && !GraphicsEnvironment.isHeadless()) {
+        if (options.screenshot == null && options.disassemble == null && !GraphicsEnvironment.isHeadless()) {
             JOptionPane.showMessageDialog(null, message, "Beebslop", JOptionPane.ERROR_MESSAGE)
         }
         exitProcess(1)
@@ -215,14 +263,18 @@ fun main(args: Array<String>) {
         System.err.println("--disc needs the disc interface: $where, and don't pass --no-dfs.")
         exitProcess(2)
     }
-    options.screenshot?.let {
-        try {
-            saveScreenshot(roms, options, it)
+    if (options.screenshot != null || options.disassemble != null) {
+        val machine = try {
+            runHeadless(roms, options)
         } catch (e: IOException) {
             System.err.println("Couldn't load a tape or disc: ${e.message}")
             exitProcess(1)
         }
-        println("Saved ${it.path}")
+        options.disassemble?.let { println(disassemble(machine, it, options.origin ?: it.first)) }
+        options.screenshot?.let {
+            saveScreenshot(machine, it)
+            println("Saved ${it.path}")
+        }
         return
     }
     SwingUtilities.invokeLater { EmulatorWindow(roms, options).show() }

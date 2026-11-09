@@ -28,7 +28,9 @@ To run without Gradle or Java installed, see [Standalone app](#standalone-app).
 | `--roms DIR` | Directory with `os.rom`, `basic.rom` and `dnfs.rom` (default: built in) |
 | `--scale 1\|2` | Window size; 1 is 704 x 528 (default: 1) |
 | `--screenshot FILE` | Run without a window, save a PNG of the picture, then exit |
-| `--frames N` | 50ths of a second to run before the screenshot (default: 150) |
+| `--disassemble A-B` | Run without a window, then print the machine code from hex address A to B, as in `--disassemble FFE3-FFF9`; with `--screenshot`, the picture comes from the same run |
+| `--origin ADDR` | Number the listing from hex ADDR, for code that is copied there to run |
+| `--frames N` | 50ths of a second to run before the screenshot or listing (default: 150) |
 | `--tape FILE` | Put a UEF cassette image in the recorder |
 | `--disc FILE` | Put an SSD or DSD disc image in drive 0 |
 | `--disc1 FILE` | Put an SSD or DSD disc image in drive 1 |
@@ -44,6 +46,26 @@ The window shows the picture and runs in real time. **Machine** has Pause
 **Disc** inserts, ejects, write-protects and saves the discs in drives 0 and 1;
 **Keys** has BREAK and its variants, keys a host keyboard lacks, f0-f9 and the
 keyboard layout; **View** sets the size; **Help > Keyboard** lists the keys.
+
+### Disassembler
+
+`--disassemble` lists memory as the CPU sees it after the run (RAM, the paged
+ROM or the OS), reading it without side effects. Run a program first with
+`--type` or `--boot`, and raise `--frames` for one that loads from tape. Addresses
+take an optional `$`, `&` or `0x`. The listing uses `$` hex, marks undocumented
+opcodes with `*`, and has the same format as Elkslop's:
+
+```sh
+./run.sh --disassemble FFE3-FFF9
+FFE3  C9 0D     CMP #$0D
+FFE5  D0 07     BNE $FFEE
+...
+FFEE  6C 0E 02  JMP ($020E)
+```
+
+The disassembler itself is `cpu/src/commonMain/kotlin/beebslop/cpu/Disassembler.kt`,
+from Elkslop. It knows no machine: it reads through a side-effect-free `peek` and
+can take a function that names addresses, so a front end can show `JSR OSWRCH`.
 
 ### Keyboard
 
@@ -167,6 +189,8 @@ The production code is in `cpu/src/commonMain/kotlin/beebslop/cpu`.
 - `Cpu6502.kt`: instruction execution, address calculation, arithmetic, stack,
   and interrupt handling. Each instruction emits its actual read/write sequence;
   cycle counts are derived from those accesses rather than a separate table.
+- `Disassembler.kt`: a listing of any range of memory, read through a
+  side-effect-free `peek`, with undocumented opcodes marked.
 
 ### Connecting a machine
 
