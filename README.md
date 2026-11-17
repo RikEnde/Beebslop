@@ -31,6 +31,7 @@ To run without Gradle or Java installed, see [Standalone app](#standalone-app).
 | `--disassemble A-B` | Run without a window, then print the machine code from hex address A to B, as in `--disassemble FFE3-FFF9`; with `--screenshot`, the picture comes from the same run |
 | `--origin ADDR` | Number the listing from hex ADDR, for code that is copied there to run |
 | `--frames N` | 50ths of a second to run before the screenshot or listing (default: 150) |
+| `--break ADDR` | Stop at hex ADDR and open the debugger; repeat for more. Without a window (with `--disassemble`), the run ends there instead and the registers are printed before the listing |
 | `--tape FILE` | Put a UEF cassette image in the recorder |
 | `--disc FILE` | Put an SSD or DSD disc image in drive 0 |
 | `--disc1 FILE` | Put an SSD or DSD disc image in drive 1 |
@@ -45,7 +46,8 @@ The window shows the picture and runs in real time. **Machine** has Pause
 **Tape** inserts, rewinds, ejects and saves cassettes, and turns on Fast Loading;
 **Disc** inserts, ejects, write-protects and saves the discs in drives 0 and 1;
 **Keys** has BREAK and its variants, keys a host keyboard lacks, f0-f9 and the
-keyboard layout; **View** sets the size; **Help > Keyboard** lists the keys.
+keyboard layout; **Debug** opens the debugger; **View** sets the size;
+**Help > Keyboard** lists the keys.
 
 ### Disassembler
 
@@ -66,6 +68,60 @@ FFEE  6C 0E 02  JMP ($020E)
 The disassembler itself is `cpu/src/commonMain/kotlin/beebslop/cpu/Disassembler.kt`,
 from Elkslop. It knows no machine: it reads through a side-effect-free `peek` and
 can take a function that names addresses, so a front end can show `JSR OSWRCH`.
+
+With `--break`, a headless run stops as soon as the CPU is about to execute
+that address; `--frames` is then the most it runs. For example, to stop at the
+first character the OS prints:
+
+```sh
+./run.sh --break FFEE --disassemble FFEE-FFF0
+Breakpoint at FFEE: PC=FFEE A=0A X=FF Y=03 SP=F9 P=65 nV-bdIzC
+FFEE  6C 0E 02  JMP ($020E)
+```
+
+### Debugger
+
+**Debug > Debugger...** (Cmd+B on macOS, Ctrl+Shift+B elsewhere; Cmd+D is
+Insert Disc) opens a window on the running machine. It shows the code around
+the PC, the registers and flags, the stack, the breakpoints and a memory dump.
+While the machine runs they update ten times a second. When it stops, the code
+view jumps to the next instruction to run, marked `▶`. The window is Elkslop's,
+and works the same way.
+
+| Key | Button | |
+|---|---|---|
+| F5 | Continue | Run until a breakpoint |
+| F6 | Pause | Stop at the end of the frame (also Machine > Pause, Cmd+P) |
+| F7 | Step Into | Run one instruction, or take one interrupt |
+| F8 | Step Over | Run one instruction; a JSR runs until it returns, and interrupts run to their RTI |
+| Shift+F8 | Step Out | Run until the current subroutine or interrupt handler returns |
+| F9 | | Toggle the breakpoint on the selected line |
+
+These keys work in the debugger window; in the main window F1-F9 are still the
+BBC's function keys. On macOS, hold Fn for them if they control the Mac.
+
+Click a line's left edge, or double-click it, to toggle its breakpoint
+(shown `●`). Right-click a line to run to it, or to show the code or memory its
+operand names. **Go to** takes a hex address or a name such as `OSWRCH` or
+`SYSVIA_IFR`, and stops the view following the PC until you click **Follow PC**
+again or the machine stops. Scroll the memory dump with the mouse wheel.
+Breakpoints stop the machine before their instruction runs, and stay set when
+the window closes. **Debug > Break into Debugger** pauses the machine and opens
+the window.
+
+The listing names the OS entry points and vectors, and the registers of the
+chips in SHEILA (`BbcLabels.kt`), so `STA $FE40` shows as `STA SYSVIA_ORB`. The
+memory view reads I/O without side effects, so looking at a VIA doesn't clear
+its interrupt flags.
+
+Step Over waits for a JSR to return to the next instruction. A routine that
+reads data placed after its JSR returns past that data instead, so Step Over
+runs on to the next breakpoint; use Step Into, then Step Out, for those.
+
+Stepping can stop in the middle of a frame; the screen shows the last whole
+frame until the machine finishes the next one. Lines above the PC are found by
+decoding forwards from a little way back, so after data they may be wrong; the
+lines from the PC on are always right.
 
 ### Keyboard
 
@@ -161,8 +217,8 @@ on first launch macOS refuses to open it by double-click: right-click it, choose
 The emulation core lives in `commonMain` source sets and depends only on the
 common Kotlin standard library. It declares JVM and Kotlin/Native macOS, Linux and
 Windows targets. Loading test fixtures and ROM files lives in `jvmTest`. Only the
-JVM tests have been run so far. The `desktop` front end is JVM-only, because it
-uses Swing.
+JVM tests have been run so far. The `desktop` front end and the `debugger` window
+are JVM-only, because they use Swing.
 
 ## Build and test
 
@@ -170,7 +226,7 @@ Use a JDK 17 or newer. The Gradle wrapper pins Gradle 9.7.0 and verifies its
 archive checksum; Kotlin is pinned to 2.4.21.
 
 ```sh
-./gradlew :cpu:jvmTest :bbc:jvmTest
+./gradlew :cpu:jvmTest :bbc:jvmTest :debugger:jvmTest :desktop:jvmTest
 ```
 
 Tests use checked-in fixtures, ROMs and tapes; they download nothing.
@@ -189,8 +245,16 @@ The production code is in `cpu/src/commonMain/kotlin/beebslop/cpu`.
 - `Cpu6502.kt`: instruction execution, address calculation, arithmetic, stack,
   and interrupt handling. Each instruction emits its actual read/write sequence;
   cycle counts are derived from those accesses rather than a separate table.
+  `lastStep` (`StepKind.kt`) says whether the last step ran an instruction, took
+  an IRQ or NMI, or idled halted.
 - `Disassembler.kt`: a listing of any range of memory, read through a
-  side-effect-free `peek`, with undocumented opcodes marked.
+  side-effect-free `peek`, with undocumented opcodes marked and optional names
+  for addresses.
+- `Debugger.kt`: breakpoints, step into, over and out, and run to an address.
+  It never runs the CPU: the machine's loop asks `shouldStop(cpu)` before each
+  step and calls `stepped(cpu)` after, so timing and interrupt lines stay the
+  machine's business, and any 6502 machine can use it. `active` is false with no
+  breakpoints and no step under way, so the loop can skip both calls.
 
 ### Connecting a machine
 
@@ -337,6 +401,7 @@ The production code is in `bbc/src/commonMain/kotlin/beebslop/bbc`.
 | `Tape.kt` | A cassette: playing, recording, and reading and writing UEF images |
 | `Disc.kt` | A floppy disc as tracks of sectors with ID fields, and SSD/DSD images |
 | `Fdc8271.kt` | The 8271 disc controller and its two drives, with rotation timing |
+| `BbcLabels.kt` | Names for the OS entry points, the vectors and the SHEILA registers, for the disassembler and the debugger |
 
 ### Memory map
 
@@ -610,6 +675,32 @@ pixels, and write PNGs to `bbc/build/test-frames/`:
 
 `commonTest` also checks the SAA5050: the letter A with character rounding,
 solid and separated mosaics, when colour changes take effect, and held graphics.
+
+## Debugger module
+
+`debugger/src/jvmMain/kotlin/beebslop/debugger` is Elkslop's Swing debugger for
+any 6502 machine, unchanged apart from its package. It depends on `cpu` and
+nothing else.
+
+- `DebugSession.kt`: the machine's half, used only on the emulation thread. It
+  owns the `cpu` module's `Debugger`, says in words why the machine stopped, and
+  copies the registers and all 64 KiB into a `DebugSnapshot` whenever the machine
+  stops or a breakpoint changes, and ten times a second while it runs with a
+  window watching. The machine loop calls `shouldStop`/`stepped` around each
+  step, and `pausedChanged`/`tick` once per frame.
+- `DebugTarget.kt`: what the window asks of the machine. `DebugSession.target`
+  makes one from the machine's command queue, so requests from the window's
+  thread run on the machine's thread.
+- `DebugSnapshot.kt`: the machine as the window shows it.
+- `DebuggerWindow.kt`: the window. It draws only from snapshots and sends
+  requests through its `DebugTarget`. The machine passes in a title, names for
+  addresses (`BbcLabels`), and a hook for the frame (Beebslop sets its icon there).
+
+The desktop `Emulator` runs frames through `Emulator.runFrame`, which asks the
+session before each step. When it stops partway through a frame, the next run
+finishes that frame instead of starting a new one, so typing and keys aren't
+repeated. Its tests drive a session with a bare `Cpu6502` on RAM and a fake
+command queue; the desktop tests stop a headless run in the OS's IRQ handler.
 
 ## License
 

@@ -3,10 +3,12 @@
 
 package beebslop.desktop
 
+import beebslop.bbc.BbcLabels
 import beebslop.bbc.Disc
 import beebslop.bbc.KeyboardMatrix.Key
 import beebslop.bbc.KeyboardText
 import beebslop.bbc.Tape
+import beebslop.debugger.DebuggerWindow
 import java.awt.BorderLayout
 import java.awt.FileDialog
 import java.awt.Toolkit
@@ -50,6 +52,9 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
     private val discNames = arrayOfNulls<String>(2)
     private val writeProtectItems = Array(2) { JCheckBoxMenuItem("Write Protect") }
     @Volatile private var discMotor = false
+    private val debuggerWindow by lazy {
+        DebuggerWindow(emulator.debugTarget, "Beebslop Debugger", BbcLabels::forAddress, AppIcon::install)
+    }
 
     fun show() {
         frame.defaultCloseOperation = WindowConstants.DISPOSE_ON_CLOSE
@@ -73,6 +78,7 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
         frame.setLocationRelativeTo(null)
         frame.isVisible = true
         screen.requestFocusInWindow()
+        for (address in options.breakpoints) emulator.setBreakpoint(address, true)
         options.tape?.let { insertTape(it) }
         for ((drive, file) in options.discs.withIndex()) if (file != null) insertDisc(drive, file)
         if (options.boot) emulator.pressBreakWith(Key.SHIFT)
@@ -116,6 +122,17 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
                 JOptionPane.ERROR_MESSAGE,
             )
         }
+    }
+
+    override fun pausedChanged(paused: Boolean) {
+        SwingUtilities.invokeLater {
+            pauseItem.isSelected = paused
+            updateTitle()
+        }
+    }
+
+    override fun debuggerStopped() {
+        SwingUtilities.invokeLater { debuggerWindow.show() }
     }
 
     override fun ledsChanged(capsLock: Boolean, shiftLock: Boolean) {
@@ -272,6 +289,16 @@ class EmulatorWindow(roms: Roms, private val options: Options) : Emulator.Listen
                 toolTipText = "No disc interface: put dnfs.rom in the ROM directory"
             }
             for (drive in 0..1) add(createDriveMenu(drive))
+        })
+        add(JMenu("Debug").apply {
+            // Cmd+D (Ctrl+Shift+D) is Insert Disc here, so the debugger has B.
+            add(item("Debugger...", shortcut(KeyEvent.VK_B)) { debuggerWindow.show() })
+            add(item("Break into Debugger", null) {
+                emulator.paused = true
+                pauseItem.isSelected = true
+                updateTitle()
+                debuggerWindow.show()
+            })
         })
         add(JMenu("View").apply {
             val group = ButtonGroup()

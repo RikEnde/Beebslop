@@ -11,7 +11,10 @@ kotlin {
     jvm()
 
     sourceSets {
-        jvmMain.dependencies { implementation(project(":bbc")) }
+        jvmMain.dependencies {
+            implementation(project(":bbc"))
+            implementation(project(":debugger"))
+        }
         jvmTest.dependencies { implementation(kotlin("test")) }
     }
 }
