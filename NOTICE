@@ -4,8 +4,10 @@ Copyright 2026 The Beebslop contributors
 Licensed under the BSD 3-Clause License (see LICENSE). Files listed in
 REUSE.toml as third-party keep their own licenses; see LICENSES/.
 
-The cpu module is copied from Elkslop (https://github.com/RikEnde/elkslop),
-Copyright 2026 The Elkslop contributors, under the same BSD 3-Clause License.
+The cpu and debugger modules are copied from Elkslop
+(https://github.com/RikEnde/elkslop), Copyright 2026 The Elkslop contributors,
+under the same BSD 3-Clause License. bbc/.../BbcLabels.kt is adapted from
+Elkslop's ElectronLabels.kt, under the same license.
 These files are adapted from Elkslop's desktop front end, under the same
 license: bbc/.../Typist.kt (from TextTyper.kt), bbc/.../Tape.kt (from
 UefTape.kt and UlaCassette.kt), desktop/.../TapeFile.kt, desktop/.../KeyMapping.kt,
@@ -23,8 +25,9 @@ same terms. See tapes/README.md and discs/README.md. The blank disc images
 
 bbc/src/jvmTest/.../TapeLoadTest.kt is adapted from Elkslop's TapeLoadTest.kt,
 desktop/.../IconExport.kt and desktop/src/jvmTest/.../DisassembleOptionsTest.kt
-from the Elkslop files of the same names, and the --disassemble and --origin
-options in desktop/.../Main.kt from Elkslop's, all under the same BSD 3-Clause
+from the Elkslop files of the same names, and the --disassemble, --origin and --break
+options and the debugger hooks in desktop/.../Main.kt, Emulator.kt and
+EmulatorWindow.kt from Elkslop's, all under the same BSD 3-Clause
 License.
 
 ------------------------------------------------------------------------------

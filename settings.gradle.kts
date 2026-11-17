@@ -13,4 +13,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "beebslop"
-include(":cpu", ":bbc", ":desktop")
+include(":cpu", ":bbc", ":debugger", ":desktop")

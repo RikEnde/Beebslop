@@ -106,7 +106,9 @@ Licenses and pinned versions for the test fixtures are in
 
 - The *BBC Microcomputer Advanced User Guide*, by Andrew C. Bray, Adrian C.
   Dickens and Mark A. Holmes, for the memory map, SHEILA and the paged ROM
-  select register.
+  select register, and the names of the OS entry points (`OSWRCH`, `OSBYTE` and
+  so on) and vectors (`WRCHV`, `IRQ1V` and so on) that the debugger shows. Acorn
+  gave them those names.
 - **[BeebWiki](https://beebwiki.mdfs.net/)**: the
   [cycle stretching](https://beebwiki.mdfs.net/Cycle_stretching) page, for which
   devices run at 1 MHz.

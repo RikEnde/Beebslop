@@ -11,6 +11,8 @@ import beebslop.bbc.KeyboardText
 import beebslop.bbc.Tape
 import beebslop.bbc.Typist
 import beebslop.bbc.Video
+import beebslop.debugger.DebugSession
+import beebslop.debugger.DebugTarget
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -52,6 +54,12 @@ class Emulator(
 
         /** Called when a changed disc couldn't be written back to [file]; it stays in, unsaved. */
         fun discSaveFailed(drive: Int, file: File, error: IOException) {}
+
+        /** Called on the emulation thread when the machine pauses or runs again, for any reason. */
+        fun pausedChanged(paused: Boolean) {}
+
+        /** Called on the emulation thread when the debugger stops the machine. */
+        fun debuggerStopped() {}
     }
 
     /** A disc in a drive, and the file it is saved to, if any. */
@@ -69,6 +77,20 @@ class Emulator(
     private var tape: Tape? = null
     private val slots = arrayOfNulls<Slot>(2)
     private var discMotor = false
+
+    /** Breakpoints, stepping and snapshots; only the emulation thread touches it. */
+    private val debug = DebugSession({ machine.bus.peek(it) })
+
+    /** The frame under way, if the debugger stopped the machine partway through it. */
+    private var unfinished: Frame? = null
+    private var reportedPaused = false
+
+    /** For the debugger window: its requests reach [debug] through the command queue. */
+    val debugTarget: DebugTarget = debug.target(
+        post = { block -> post { block() } },
+        cpu = { machine.cpu },
+        setPaused = { paused = it },
+    )
 
     @Volatile private var running = false
     @Volatile var paused = false
@@ -123,6 +145,9 @@ class Emulator(
 
     /** Press keys together briefly, for keys a menu click can't hold down. */
     fun tap(vararg keys: Key) = post { typist.enqueueChord(keys.toList()) }
+
+    /** Set or clear a breakpoint, as for --break; the debugger window has [debugTarget]. */
+    fun setBreakpoint(address: Int, on: Boolean) = debugTarget.setBreakpoint(address, on)
 
     /** Type [text]; characters the BBC cannot type are skipped and returned. */
     fun type(text: String, delayFrames: Int = 0): Set<Char> {
@@ -191,6 +216,7 @@ class Emulator(
     fun powerCycle() = post {
         typist.cancel(it)
         natural.reset()
+        unfinished = null
         machine = createMachine().also { fresh ->
             fresh.serialUla.tape = tape
             for (drive in slots.indices) fresh.fdc?.drives?.get(drive)?.disc = slots[drive]?.disc
@@ -237,7 +263,14 @@ class Emulator(
                 machine.sound.startSampling(SAMPLE_RATE, samples.size)
                 soundMachine = machine
             }
-            if (paused) {
+            val isPaused = paused
+            if (isPaused != reportedPaused) {
+                reportedPaused = isPaused
+                debug.pausedChanged(isPaused)
+                listener.pausedChanged(isPaused)
+            }
+            debug.tick(machine.cpu, isPaused, frameCount)
+            if (isPaused) {
                 Thread.sleep(10)
                 paceStart = System.nanoTime()
                 paceTicks = 0
@@ -279,12 +312,30 @@ class Emulator(
         return ula.motorOn && (ula.recording || !cassette.atEnd)
     }
 
-    /** Runs one frame and publishes the picture; returns the elapsed machine ticks. */
+    /**
+     * Runs one frame and publishes the picture, or runs until the debugger stops
+     * the machine partway through one; returns the elapsed machine ticks. A
+     * frame the debugger stopped is finished on the next call, and its
+     * once-a-frame work (typing, keys) isn't repeated.
+     */
     private fun runField(): Long {
         val machine = machine
-        typist.onFrame(machine)
-        natural.onFrame(machine.keyboard)
-        val elapsed = runFrame(machine)
+        val start = machine.clock.ticks
+        val frame = unfinished ?: Frame(start).also {
+            typist.onFrame(machine)
+            natural.onFrame(machine.keyboard)
+        }
+        val cpu = machine.cpu
+        val debug = debug
+        val finished = runFrame(machine, frame, { debug.shouldStop(cpu) }, { debug.stepped(cpu) })
+        val elapsed = machine.clock.ticks - start
+        if (!finished) {
+            unfinished = frame
+            paused = true
+            listener.debuggerStopped()
+            return elapsed
+        }
+        unfinished = null
         synchronized(frameLock) { machine.video.pixels.copyInto(published) }
         listener.frameReady(++frameCount)
         val motor = machine.serialUla.motorOn
@@ -308,7 +359,9 @@ class Emulator(
             // Like the real machine, a jammed CPU leaves the display running and
             // only BREAK recovers it. Pause so the user knows why it froze.
             paused = true
-            listener.stopped(IllegalStateException("The 6502 executed a JAM opcode and halted."))
+            val address = (machine.cpu.programCounter - 1) and 0xFFFF
+            debug.stopped("Halted by JAM at $%04X".format(address))
+            listener.stopped(IllegalStateException("The 6502 executed a JAM opcode at &%04X and halted.".format(address)))
         }
         return elapsed
     }
@@ -317,21 +370,50 @@ class Emulator(
         const val SAMPLE_RATE = 48_000
         private const val MODIFIER_BREAK_FRAMES = 25
         private const val NANOS_PER_TICK = 1_000_000_000L / BbcClock.TICKS_PER_SECOND
-        private const val MIN_FRAME_TICKS = 35_000L // 17.5 ms
-        private const val MAX_FRAME_TICKS = 80_000L // 40 ms
+        const val MIN_FRAME_TICKS = 35_000L // 17.5 ms
+        const val MAX_FRAME_TICKS = 80_000L // 40 ms
 
-        /**
-         * Runs one frame: at least 17.5 ms of machine time, then on to the next
-         * vertical sync, so at the normal 50 Hz each frame is one whole field.
-         * A 6845 that is not yet programmed (at power-on) or syncs at an odd rate
-         * still gives frames of 17.5-40 ms. Returns the elapsed machine ticks.
-         */
+        /** Runs one frame; returns the elapsed machine ticks. */
         fun runFrame(machine: BbcMachine): Long {
             val start = machine.clock.ticks
-            while (machine.clock.ticks - start < MIN_FRAME_TICKS) machine.step()
-            val field = machine.video.fields
-            while (machine.video.fields == field && machine.clock.ticks - start < MAX_FRAME_TICKS) machine.step()
+            runFrame(machine, Frame(start))
             return machine.clock.ticks - start
         }
+
+        /**
+         * Runs [frame]: at least 17.5 ms of machine time from its start, then on
+         * to the next vertical sync, so at the normal 50 Hz each frame is one
+         * whole field. A 6845 that is not yet programmed (at power-on) or syncs
+         * at an odd rate still gives frames of 17.5-40 ms.
+         *
+         * [shouldStop] is asked before each step and [stepped] told after it,
+         * for a debugger. True means the frame is done; false means
+         * [shouldStop] stopped it, and calling again with the same [frame]
+         * carries on where it left off.
+         */
+        inline fun runFrame(
+            machine: BbcMachine,
+            frame: Frame,
+            shouldStop: () -> Boolean = { false },
+            stepped: () -> Unit = {},
+        ): Boolean {
+            while (true) {
+                val elapsed = machine.clock.ticks - frame.start
+                if (elapsed >= MIN_FRAME_TICKS) {
+                    // The field count when the minimum is reached; the frame ends when it changes.
+                    if (frame.field < 0) frame.field = machine.video.fields
+                    else if (machine.video.fields != frame.field) return true
+                }
+                if (elapsed >= MAX_FRAME_TICKS) return true
+                if (shouldStop()) return false
+                machine.step()
+                stepped()
+            }
+        }
     }
+}
+
+/** A frame under way: where it started, and the field count once its minimum length has run. */
+class Frame(val start: Long) {
+    var field = -1L
 }
